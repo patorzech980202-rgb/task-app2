@@ -56,10 +56,11 @@ export default function Home() {
     }))
   }
 
-  // 🔥 DEPARTAMENTY (SYN / MAMA)
+  // 🔥 DEPARTAMENTY (POKOJOWE/ SZEFOWA)
   const departments = [
-    { id: 1, name: "SYN" },
-    { id: 2, name: "MAMA" }
+    { id: 1, name: "POKOJOWE" },
+    { id: 2, name: "SZEFOWA" }
+    { id: 3, name: "RECEPCJA" }
   ]
 
   // 🔐 INIT USER
