@@ -58,10 +58,10 @@ export default function Home() {
 
   // 🔥 DEPARTAMENTY (POKOJOWE/ SZEFOWA)
   const departments = [
-    { id: 1, name: "POKOJOWE" },
-    { id: 2, name: "SZEFOWA" }
-    { id: 3, name: "RECEPCJA" }
-  ]
+  { id: 1, name: "POKOJOWE" },
+  { id: 2, name: "SZEFOWA" },
+  { id: 3, name: "RECEPCJA" }
+]
 
   // 🔐 INIT USER
   useEffect(() => {
