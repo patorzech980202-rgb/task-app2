@@ -31,16 +31,6 @@ export default function Home() {
   const [selectedDepartment, setSelectedDepartment] = useState(1)
   const [showForm, setShowForm] = useState(false)
 
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [newTask, setNewTask] = useState("")
-
-  const [loading, setLoading] = useState(true)
-
-  // login state
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-
   const formRef = useRef<HTMLDivElement>(null)
 
   const [openSections, setOpenSections] = useState({
@@ -56,12 +46,20 @@ export default function Home() {
     }))
   }
 
-  // 🔥 DEPARTAMENTY (POKOJOWE/ SZEFOWA)
   const departments = [
-  { id: 1, name: "POKOJOWE" },
-  { id: 2, name: "SZEFOWA" },
-  { id: 3, name: "RECEPCJA" }
-]
+    { id: 1, name: "POKOJOWE" },
+    { id: 2, name: "SZEFOWA" },
+    { id: 3, name: "RECEPCJA" }
+  ]
+
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [newTask, setNewTask] = useState("")
+
+  const [loading, setLoading] = useState(true)
+
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
 
   // 🔐 INIT USER
   useEffect(() => {
@@ -90,31 +88,63 @@ export default function Home() {
     load()
   }, [])
 
-  // 🔥 REALTIME TASKS
+  // 🔥 REALTIME FIX (ONLY CHANGE)
   useEffect(() => {
-    const channel = supabase
-      .channel("tasks-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "tasks" },
-        (payload) => {
-          const newRow = payload.new as Task
-          const oldRow = payload.old as Task
+    let channel: any
 
-          setTasks(prev => {
-            if (payload.eventType === "INSERT") return [...prev, newRow]
-            if (payload.eventType === "UPDATE")
-              return prev.map(t => (t.id === newRow.id ? newRow : t))
-            if (payload.eventType === "DELETE")
-              return prev.filter(t => t.id !== oldRow.id)
-            return prev
-          })
-        }
-      )
-      .subscribe()
+    const connect = () => {
+      channel = supabase
+        .channel("tasks-live")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "tasks" },
+          (payload) => {
+            console.log("REALTIME EVENT:", payload)
+
+            const newRow = payload.new as Task
+            const oldRow = payload.old as Task
+
+            setTasks(prev => {
+              if (payload.eventType === "INSERT") {
+                return [...prev, newRow]
+              }
+
+              if (payload.eventType === "UPDATE") {
+                return prev.map(t =>
+                  t.id === newRow.id ? newRow : t
+                )
+              }
+
+              if (payload.eventType === "DELETE") {
+                return prev.filter(t => t.id !== oldRow.id)
+              }
+
+              return prev
+            })
+          }
+        )
+        .subscribe()
+    }
+
+    connect()
+
+    const handleFocus = () => {
+      console.log("Realtime reconnect (mobile fix)")
+
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+
+      connect()
+    }
+
+    window.addEventListener("focus", handleFocus)
 
     return () => {
-      supabase.removeChannel(channel)
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+      window.removeEventListener("focus", handleFocus)
     }
   }, [])
 
@@ -146,12 +176,11 @@ export default function Home() {
       .from("profiles")
       .select("*")
       .eq("department_id", selectedDepartment)
-      .eq("status", "na stanowisku")
 
     const target = candidates?.[0]
 
     if (!target) {
-      alert("Brak dostępnego pracownika")
+      alert("Brak pracownika w dziale")
       return
     }
 
@@ -255,27 +284,23 @@ export default function Home() {
     ))
 
   // 🔐 LOGIN SCREEN
-  if (loading) {
-    return <div className="p-6">Ładowanie...</div>
-  }
+  if (loading) return <div className="p-6">Ładowanie...</div>
 
   if (!profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6]">
-        <div className="bg-white p-6 rounded-xl space-y-3 w-80">
+        <div className="bg-white p-6 rounded-xl w-80 space-y-3">
           <h1 className="text-black font-bold text-xl">Logowanie</h1>
 
-          <input
-            className="w-full border p-2 text-black"
+          <input className="w-full border p-2 text-black"
             placeholder="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
           />
 
-          <input
-            className="w-full border p-2 text-black"
-            type="password"
+          <input className="w-full border p-2 text-black"
             placeholder="hasło"
+            type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
           />
@@ -298,9 +323,7 @@ export default function Home() {
             Cześć, {profile.name}
           </h1>
 
-          <p className="text-black">
-            Status: {profile.status}
-          </p>
+          <p className="text-black">{profile.status}</p>
 
           <button onClick={toggleStatus} className="border px-3 py-1 bg-white text-black rounded mt-2">
             Zmień status
@@ -311,7 +334,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* ADD TASK */}
         <div className="bg-white p-4 rounded-xl mb-4">
           <button onClick={() => setShowForm(!showForm)} className="w-full bg-black text-white py-2 rounded">
             + Dodaj task
@@ -319,14 +341,12 @@ export default function Home() {
 
           {showForm && (
             <div className="mt-3 space-y-2">
-              <input
-                className="w-full border p-2"
+              <input className="w-full border p-2"
                 value={newTask}
                 onChange={e => setNewTask(e.target.value)}
               />
 
-              <select
-                className="w-full border p-2"
+              <select className="w-full border p-2"
                 value={selectedDepartment}
                 onChange={e => setSelectedDepartment(Number(e.target.value))}
               >
@@ -342,7 +362,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* SEKCJE */}
         <button onClick={() => toggleSection("otrzymane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
           Otrzymane <Badge count={received.length} />
         </button>
