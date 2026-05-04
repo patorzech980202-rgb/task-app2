@@ -52,47 +52,86 @@ export default function Home() {
     { id: 3, name: "Logistyka" }
   ]
 
+  const [session, setSession] = useState<any>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [newTask, setNewTask] = useState("")
 
-  // 🔐 SERVICE WORKER (PWA) — DODANE TUTAJ
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+
+  // 🔐 SERVICE WORKER
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js")
     }
   }, [])
 
-  // 🔐 GET CURRENT USER + PROFILE
+  // 🔐 STABILNE ŁADOWANIE SESJI + PROFILU (NAPRAWA)
   useEffect(() => {
-    const load = async () => {
-      const { data: auth } = await supabase.auth.getUser()
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
 
-      if (!auth.user) {
-  console.log("Brak zalogowanego użytkownika")
-  return
-}
+      const session = data.session
+      setSession(session)
 
-      const { data: prof } = await supabase
+      if (!session) return
+
+      const { data: prof, error } = await supabase
         .from("profiles")
         .select("*")
-        .eq("id", auth.user.id)
+        .eq("id", session.user.id)
         .single()
 
+      if (error) {
+        console.log("Brak profilu:", error.message)
+        return
+      }
+
       setProfile(prof)
+
+      const { data: t } = await supabase.from("tasks").select("*")
+      setTasks(t || [])
     }
 
-    load()
+    init()
   }, [])
 
-  // 🔥 LOAD TASKS
-  useEffect(() => {
-    const load = async () => {
-      const { data } = await supabase.from("tasks").select("*")
-      setTasks(data || [])
+  // 🔐 LOGIN (NAPRAWIONY)
+  const login = async () => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    })
+
+    if (error) {
+      alert(error.message)
+      return
     }
-    load()
-  }, [])
+
+    if (!data.session) return
+
+    setSession(data.session)
+
+    const { data: prof, error: profError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", data.session.user.id)
+      .single()
+
+    if (profError) {
+      console.log(profError.message)
+      return
+    }
+
+    setProfile(prof)
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    setSession(null)
+    setProfile(null)
+  }
 
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
@@ -105,12 +144,9 @@ export default function Home() {
 
     const target = candidates?.[0]
 
-    if (!target) {
-      alert("Brak dostępnego pracownika w tym dziale")
-      return
-    }
+    if (!target) return alert("Brak pracownika")
 
-    const { data, error } = await supabase.from("tasks").insert({
+    const { data } = await supabase.from("tasks").insert({
       title: newTask,
       authorId: profile.id,
       assigneeId: target.id,
@@ -121,46 +157,30 @@ export default function Home() {
       completedAt: null
     }).select()
 
-    if (error) {
-      console.error(error)
-      alert("Błąd zapisu taska")
-      return
-    }
-
-    if (data) {
-      setTasks(prev => [...prev, ...data])
-    }
+    if (data) setTasks(prev => [...prev, ...data])
 
     setNewTask("")
     setShowForm(false)
   }
 
   const markDone = async (id: number) => {
-    await supabase
-      .from("tasks")
-      .update({
-        done: true,
-        completedAt: new Date().toISOString()
-      })
-      .eq("id", id)
+    await supabase.from("tasks").update({
+      done: true,
+      completedAt: new Date().toISOString()
+    }).eq("id", id)
 
     setTasks(prev =>
-      prev.map(t =>
-        t.id === id ? { ...t, done: true } : t
-      )
+      prev.map(t => t.id === id ? { ...t, done: true } : t)
     )
   }
 
   const archiveTask = async (id: number) => {
-    await supabase
-      .from("tasks")
+    await supabase.from("tasks")
       .update({ archived: true })
       .eq("id", id)
 
     setTasks(prev =>
-      prev.map(t =>
-        t.id === id ? { ...t, archived: true } : t
-      )
+      prev.map(t => t.id === id ? { ...t, archived: true } : t)
     )
   }
 
@@ -172,131 +192,162 @@ export default function Home() {
         ? "poza stanowiskiem"
         : "na stanowisku"
 
-    const { error } = await supabase
-      .from("profiles")
+    await supabase.from("profiles")
       .update({ status: newStatus })
       .eq("id", profile.id)
 
-    if (!error) {
-      setProfile({ ...profile, status: newStatus })
-    }
+    setProfile({ ...profile, status: newStatus })
   }
 
-  const received = tasks.filter(
-    t => t.assigneeId === profile?.id && !t.archived
-  )
+  const received = profile
+    ? tasks.filter(t => t.assigneeId === profile.id && !t.archived)
+    : []
 
-  const sent = tasks.filter(
-    t => t.authorId === profile?.id && !t.archived
-  )
+  const sent = profile
+    ? tasks.filter(t => t.authorId === profile.id && !t.archived)
+    : []
 
-  const archivedReceived = tasks.filter(
-    t => t.assigneeId === profile?.id && t.archived
-  )
+  const archivedReceived = profile
+    ? tasks.filter(t => t.assigneeId === profile.id && t.archived)
+    : []
 
-  const archivedSent = tasks.filter(
-    t => t.authorId === profile?.id && t.archived
-  )
+  const archivedSent = profile
+    ? tasks.filter(t => t.authorId === profile.id && t.archived)
+    : []
 
-  const Badge = ({ count }: { count: number }) => {
-    if (!count) return null
-    return (
-      <span className="ml-2 inline-flex items-center justify-center w-5 h-5 bg-red-500 rounded-full text-black text-xs font-bold">
+  const Badge = ({ count }: { count: number }) =>
+    count ? (
+      <span className="ml-2 bg-red-500 text-black text-xs w-5 h-5 inline-flex items-center justify-center rounded-full">
         {count}
       </span>
-    )
-  }
+    ) : null
 
   const renderTasks = (list: Task[], mode: string) =>
     list.map(t => (
-      <div
-        key={t.id}
-        className="flex justify-between p-3 bg-white border rounded-xl mb-2"
-      >
+      <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
         <span className="text-black">{t.title}</span>
 
-        {mode === "archived" ? (
-          <span className="text-gray-500 text-xs">📦</span>
-        ) : (
-          <>
-            {!t.done ? (
-              <button
-                onClick={() => markDone(t.id)}
-                className="text-xs border px-2 py-1 rounded text-black"
-              >
-                Zrobione
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-green-600 text-xs font-semibold">
-                  ✔ Wykonane
-                </span>
+        {mode === "otrzymane" && (
+          !t.done ? (
+            <button
+              onClick={() => markDone(t.id)}
+              className="text-xs border px-2 py-1 text-black"
+            >
+              Zrobione
+            </button>
+          ) : (
+            <span className="text-green-600 text-xs font-bold">
+              ✔ Wykonane
+            </span>
+          )
+        )}
 
-                <button
-                  onClick={() => archiveTask(t.id)}
-                  className="text-xs text-blue-600 border px-2 py-1 rounded"
-                >
-                  Archiwizuj
-                </button>
-              </div>
-            )}
-          </>
+        {mode === "wysłane" && (
+          !t.done ? (
+            <span className="text-gray-500 text-xs">
+              ⏳ W trakcie
+            </span>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-green-600 text-xs font-bold">
+                ✔ Wykonane
+              </span>
+
+              <button
+                onClick={() => archiveTask(t.id)}
+                className="text-xs text-blue-600 border px-2 py-1"
+              >
+                Archiwizuj
+              </button>
+            </div>
+          )
+        )}
+
+        {mode === "archiwum" && (
+          <span className="text-gray-500">📦</span>
         )}
       </div>
     ))
 
- if (!profile) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6] text-black">
-      Ładowanie danych użytkownika...
-    </div>
-  )
-}
+  // 🔐 LOGIN SCREEN
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6] flex-col gap-2">
+        <input
+          className="border p-2 text-black"
+          placeholder="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+        />
+        <input
+          className="border p-2 text-black"
+          placeholder="password"
+          type="password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+        />
+        <button
+          onClick={login}
+          className="bg-black text-white px-4 py-2"
+        >
+          Zaloguj
+        </button>
+      </div>
+    )
+  }
+
+  // 🔐 LOADING PROFILU
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-black">
+        Ładowanie profilu...
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
       <div className="w-full max-w-xl">
 
-        <div className="text-center mb-4">
-          <h1 className="text-2xl font-bold text-black">
-            Cześć, {profile.name}
+        <div className="flex justify-between mb-2">
+          <h1 className="text-black font-bold">
+            Cześć {profile.name}
           </h1>
 
-          <p className="text-black mt-2">
-            Status:{" "}
-            <b>
-              {profile.status === "na stanowisku"
-                ? "🟢 Na stanowisku"
-                : "🔴 Poza stanowiskiem"}
-            </b>
-          </p>
-
-          <button
-            onClick={toggleStatus}
-            className="mt-2 text-xs border px-3 py-1 rounded bg-white text-black"
-          >
-            Zmień status
+          <button onClick={logout} className="border px-2 bg-white text-black">
+            Wyloguj
           </button>
         </div>
 
-        <div ref={formRef} className="bg-white p-4 border rounded-xl mb-4">
+        <p className="text-black">
+          Status: <b>{profile.status}</b>
+        </p>
+
+        <button
+          onClick={toggleStatus}
+          className="mt-2 mb-3 text-xs border px-3 py-1 bg-white text-black"
+        >
+          Zmień status
+        </button>
+
+        <div className="bg-white border p-3 rounded mb-3">
           <button
-            onClick={() => setShowForm(prev => !prev)}
-            className="w-full bg-black text-white py-2 rounded-lg"
+            onClick={() => setShowForm(v => !v)}
+            className="w-full bg-black text-white py-2"
           >
-            {showForm ? "Zamknij" : "+ Dodaj zadanie"}
+            {showForm ? "Zamknij" : "+ Dodaj task"}
           </button>
 
           {showForm && (
-            <div className="mt-3 space-y-2">
+            <div className="mt-2">
               <input
-                className="w-full border p-2 rounded-lg text-black"
+                className="w-full border p-2 text-black"
                 value={newTask}
                 onChange={e => setNewTask(e.target.value)}
               />
 
               <select
-                className="w-full border p-2 rounded-lg text-black"
+                className="w-full border p-2 mt-2 text-black"
                 value={selectedDepartment}
                 onChange={e => setSelectedDepartment(Number(e.target.value))}
               >
@@ -309,7 +360,7 @@ export default function Home() {
 
               <button
                 onClick={addTask}
-                className="w-full bg-black text-white py-2 rounded-lg"
+                className="w-full bg-black text-white py-2 mt-2"
               >
                 Dodaj
               </button>
@@ -317,27 +368,27 @@ export default function Home() {
           )}
         </div>
 
-        <button onClick={() => toggleSection("otrzymane")} className="w-full bg-white border rounded-lg p-2 mb-2 text-black">
+        <button onClick={() => toggleSection("otrzymane")} className="w-full bg-white border p-2 text-black">
           📥 Otrzymane <Badge count={received.length} />
         </button>
-        {openSections.otrzymane && renderTasks(received, "received")}
+        {openSections.otrzymane && renderTasks(received, "otrzymane")}
 
-        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border rounded-lg p-2 mb-2 mt-4 text-black">
+        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border p-2 mt-2 text-black">
           📤 Wysłane <Badge count={sent.length} />
         </button>
-        {openSections.wysłane && renderTasks(sent, "sent")}
+        {openSections.wysłane && renderTasks(sent, "wysłane")}
 
-        <button onClick={() => toggleSection("archiwum")} className="w-full bg-white border rounded-lg p-2 mb-2 mt-4 text-black">
+        <button onClick={() => toggleSection("archiwum")} className="w-full bg-white border p-2 mt-2 text-black">
           📦 Archiwum
         </button>
 
         {openSections.archiwum && (
           <>
-            <div className="text-black font-bold mb-2">📥 Otrzymane</div>
-            {renderTasks(archivedReceived, "archived")}
+            <div className="text-black font-bold mt-2">Otrzymane</div>
+            {renderTasks(archivedReceived, "archiwum")}
 
-            <div className="text-black font-bold mt-4 mb-2">📤 Wysłane</div>
-            {renderTasks(archivedSent, "archived")}
+            <div className="text-black font-bold mt-2">Wysłane</div>
+            {renderTasks(archivedSent, "archiwum")}
           </>
         )}
 
