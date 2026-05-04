@@ -10,7 +10,6 @@ type Task = {
   assigneeId: string
   departmentId: number
   done: boolean
-  status: "w_trakcie" | "wykonane" // ✅ DODANE
   completedAt: string | null
   createdAt: string
   archived: boolean
@@ -57,20 +56,18 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [newTask, setNewTask] = useState("")
 
-  // 🔐 SERVICE WORKER
-  useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js")
-    }
-  }, [])
+  const [loading, setLoading] = useState(true)
 
-  // 🔐 GET USER
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+
+  // 🔐 INIT USER
   useEffect(() => {
     const load = async () => {
       const { data: auth } = await supabase.auth.getUser()
 
       if (!auth.user) {
-        console.log("Brak zalogowanego użytkownika")
+        setLoading(false)
         return
       }
 
@@ -81,47 +78,96 @@ export default function Home() {
         .single()
 
       setProfile(prof)
-    }
 
-    load()
-  }, [])
-
-  // 🔥 LOAD TASKS
-  useEffect(() => {
-    const load = async () => {
       const { data } = await supabase.from("tasks").select("*")
       setTasks(data || [])
+
+      setLoading(false)
     }
+
     load()
   }, [])
 
-  // 🔥 REALTIME (BEZ ZMIAN)
+  // 🔥 REALTIME FIX (ONLY CHANGE)
   useEffect(() => {
-    const channel = supabase
-      .channel("tasks-live")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "tasks" },
-        (payload) => {
-          const newRow = payload.new as Task
-          const oldRow = payload.old as Task
+    let channel: any
 
-          setTasks(prev => {
-            if (payload.eventType === "INSERT") return [...prev, newRow]
-            if (payload.eventType === "UPDATE")
-              return prev.map(t => (t.id === newRow.id ? newRow : t))
-            if (payload.eventType === "DELETE")
-              return prev.filter(t => t.id !== oldRow.id)
-            return prev
-          })
-        }
-      )
-      .subscribe()
+    const connect = () => {
+      channel = supabase
+        .channel("tasks-live")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "tasks" },
+          (payload) => {
+            console.log("REALTIME EVENT:", payload)
+
+            const newRow = payload.new as Task
+            const oldRow = payload.old as Task
+
+            setTasks(prev => {
+              if (payload.eventType === "INSERT") {
+                return [...prev, newRow]
+              }
+
+              if (payload.eventType === "UPDATE") {
+                return prev.map(t =>
+                  t.id === newRow.id ? newRow : t
+                )
+              }
+
+              if (payload.eventType === "DELETE") {
+                return prev.filter(t => t.id !== oldRow.id)
+              }
+
+              return prev
+            })
+          }
+        )
+        .subscribe()
+    }
+
+    connect()
+
+    const handleFocus = () => {
+      console.log("Realtime reconnect (mobile fix)")
+
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+
+      connect()
+    }
+
+    window.addEventListener("focus", handleFocus)
 
     return () => {
-      supabase.removeChannel(channel)
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
+      window.removeEventListener("focus", handleFocus)
     }
   }, [])
+
+  // 🔐 LOGIN
+  const signIn = async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    })
+
+    if (error) {
+      alert("Błąd logowania")
+      return
+    }
+
+    window.location.reload()
+  }
+
+  // 🔐 LOGOUT
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    setProfile(null)
+  }
 
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
@@ -130,12 +176,11 @@ export default function Home() {
       .from("profiles")
       .select("*")
       .eq("department_id", selectedDepartment)
-      .eq("status", "na stanowisku")
 
     const target = candidates?.[0]
 
     if (!target) {
-      alert("Brak dostępnego pracownika w tym dziale")
+      alert("Brak pracownika w dziale")
       return
     }
 
@@ -145,7 +190,6 @@ export default function Home() {
       assigneeId: target.id,
       departmentId: selectedDepartment,
       done: false,
-      status: "w_trakcie", // ✅ DODANE
       archived: false,
       createdAt: new Date().toISOString(),
       completedAt: null
@@ -160,16 +204,9 @@ export default function Home() {
       .from("tasks")
       .update({
         done: true,
-        status: "wykonane", // ✅ DODANE
         completedAt: new Date().toISOString()
       })
       .eq("id", id)
-
-    setTasks(prev =>
-      prev.map(t =>
-        t.id === id ? { ...t, done: true, status: "wykonane" } : t
-      )
-    )
   }
 
   const archiveTask = async (id: number) => {
@@ -177,12 +214,6 @@ export default function Home() {
       .from("tasks")
       .update({ archived: true })
       .eq("id", id)
-
-    setTasks(prev =>
-      prev.map(t =>
-        t.id === id ? { ...t, archived: true } : t
-      )
-    )
   }
 
   const toggleStatus = async () => {
@@ -193,14 +224,12 @@ export default function Home() {
         ? "poza stanowiskiem"
         : "na stanowisku"
 
-    const { error } = await supabase
+    await supabase
       .from("profiles")
       .update({ status: newStatus })
       .eq("id", profile.id)
 
-    if (!error) {
-      setProfile({ ...profile, status: newStatus })
-    }
+    setProfile({ ...profile, status: newStatus })
   }
 
   const received = tasks.filter(
@@ -222,7 +251,7 @@ export default function Home() {
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null
     return (
-      <span className="ml-2 inline-flex items-center justify-center w-5 h-5 bg-red-500 rounded-full text-black text-xs font-bold">
+      <span className="ml-2 w-5 h-5 bg-red-500 rounded-full text-black text-xs flex items-center justify-center">
         {count}
       </span>
     )
@@ -230,33 +259,21 @@ export default function Home() {
 
   const renderTasks = (list: Task[], mode: string) =>
     list.map(t => (
-      <div
-        key={t.id}
-        className="flex justify-between p-3 bg-white border rounded-xl mb-2"
-      >
+      <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
         <span className="text-black">{t.title}</span>
 
         {mode === "archived" ? (
-          <span className="text-gray-500 text-xs">📦</span>
+          <span>📦</span>
         ) : (
           <>
             {!t.done ? (
-              <button
-                onClick={() => markDone(t.id)}
-                className="text-xs border px-2 py-1 rounded text-black"
-              >
+              <button onClick={() => markDone(t.id)} className="text-xs border px-2 py-1 rounded text-black">
                 Zrobione
               </button>
             ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-green-600 text-xs font-semibold">
-                  ✔ Wykonane
-                </span>
-
-                <button
-                  onClick={() => archiveTask(t.id)}
-                  className="text-xs text-blue-600 border px-2 py-1 rounded"
-                >
+              <div className="flex gap-2">
+                <span className="text-green-600 text-xs">✔</span>
+                <button onClick={() => archiveTask(t.id)} className="text-xs text-blue-600 border px-2 py-1 rounded">
                   Archiwizuj
                 </button>
               </div>
@@ -266,14 +283,37 @@ export default function Home() {
       </div>
     ))
 
+  // 🔐 LOGIN SCREEN
+  if (loading) return <div className="p-6">Ładowanie...</div>
+
   if (!profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6] text-black">
-        Ładowanie danych użytkownika...
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6]">
+        <div className="bg-white p-6 rounded-xl w-80 space-y-3">
+          <h1 className="text-black font-bold text-xl">Logowanie</h1>
+
+          <input className="w-full border p-2 text-black"
+            placeholder="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+          />
+
+          <input className="w-full border p-2 text-black"
+            placeholder="hasło"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+          />
+
+          <button onClick={signIn} className="w-full bg-black text-white py-2 rounded">
+            Zaloguj
+          </button>
+        </div>
       </div>
     )
   }
 
+  // 🔥 APP
   return (
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
       <div className="w-full max-w-xl">
@@ -283,81 +323,62 @@ export default function Home() {
             Cześć, {profile.name}
           </h1>
 
-          <p className="text-black mt-2">
-            Status:{" "}
-            <b>
-              {profile.status === "na stanowisku"
-                ? "🟢 Na stanowisku"
-                : "🔴 Poza stanowiskiem"}
-            </b>
-          </p>
+          <p className="text-black">{profile.status}</p>
 
-          <button
-            onClick={toggleStatus}
-            className="mt-2 text-xs border px-3 py-1 rounded bg-white text-black"
-          >
+          <button onClick={toggleStatus} className="border px-3 py-1 bg-white text-black rounded mt-2">
             Zmień status
+          </button>
+
+          <button onClick={signOut} className="ml-2 border px-3 py-1 bg-white text-black rounded">
+            Wyloguj
           </button>
         </div>
 
-        <div ref={formRef} className="bg-white p-4 border rounded-xl mb-4">
-          <button
-            onClick={() => setShowForm(prev => !prev)}
-            className="w-full bg-black text-white py-2 rounded-lg"
-          >
-            {showForm ? "Zamknij" : "+ Dodaj zadanie"}
+        <div className="bg-white p-4 rounded-xl mb-4">
+          <button onClick={() => setShowForm(!showForm)} className="w-full bg-black text-white py-2 rounded">
+            + Dodaj task
           </button>
 
           {showForm && (
             <div className="mt-3 space-y-2">
-              <input
-                className="w-full border p-2 rounded-lg text-black"
+              <input className="w-full border p-2"
                 value={newTask}
                 onChange={e => setNewTask(e.target.value)}
               />
 
-              <select
-                className="w-full border p-2 rounded-lg text-black"
+              <select className="w-full border p-2"
                 value={selectedDepartment}
                 onChange={e => setSelectedDepartment(Number(e.target.value))}
               >
                 {departments.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
+                  <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
               </select>
 
-              <button
-                onClick={addTask}
-                className="w-full bg-black text-white py-2 rounded-lg"
-              >
+              <button onClick={addTask} className="w-full bg-black text-white py-2 rounded">
                 Dodaj
               </button>
             </div>
           )}
         </div>
 
-        <button onClick={() => toggleSection("otrzymane")} className="w-full bg-white border rounded-lg p-2 mb-2 text-black">
-          📥 Otrzymane <Badge count={received.length} />
+        <button onClick={() => toggleSection("otrzymane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+          Otrzymane <Badge count={received.length} />
         </button>
         {openSections.otrzymane && renderTasks(received, "received")}
 
-        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border rounded-lg p-2 mb-2 mt-4 text-black">
-          📤 Wysłane <Badge count={sent.length} />
+        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+          Wysłane <Badge count={sent.length} />
         </button>
         {openSections.wysłane && renderTasks(sent, "sent")}
 
-        <button onClick={() => toggleSection("archiwum")} className="w-full bg-white border rounded-lg p-2 mb-2 mt-4 text-black">
-          📦 Archiwum
+        <button onClick={() => toggleSection("archiwum")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+          Archiwum
         </button>
 
         {openSections.archiwum && (
           <>
-            <div className="text-black font-bold mb-2">📥 Otrzymane</div>
             {renderTasks(archivedReceived, "archived")}
-
-            <div className="text-black font-bold mt-4 mb-2">📤 Wysłane</div>
             {renderTasks(archivedSent, "archived")}
           </>
         )}
