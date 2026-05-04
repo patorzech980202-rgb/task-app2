@@ -68,7 +68,10 @@ export default function Home() {
     const load = async () => {
       const { data: auth } = await supabase.auth.getUser()
 
-      if (!auth.user) return
+      if (!auth.user) {
+  console.log("Brak zalogowanego użytkownika")
+  return
+}
 
       const { data: prof } = await supabase
         .from("profiles")
@@ -242,13 +245,13 @@ export default function Home() {
       </div>
     ))
 
-  if (!profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6]">
-        <div className="text-black">Ładowanie...</div>
-      </div>
-    )
-  }
+ if (!profile) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6] text-black">
+      Ładowanie danych użytkownika...
+    </div>
+  )
+}
 
   return (
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">

@@ -3,8 +3,11 @@ import "./globals.css"
 export const metadata = {
   title: "Task System",
   description: "Internal task system",
-  themeColor: "#000000",
   manifest: "/manifest.json"
+}
+
+export const viewport = {
+  themeColor: "#000000"
 }
 
 export default function RootLayout({
