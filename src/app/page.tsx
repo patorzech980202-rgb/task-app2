@@ -1,7 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "../../lib/supabase"
+
+// 🔥 Firebase Push
+import { getToken } from "firebase/messaging"
+import { messaging } from "@/lib/firebase"
 
 type Task = {
   id: number
@@ -72,7 +76,7 @@ export default function Home() {
     }
   }
 
-  // 🔐 INIT USER
+  // 🔥 INIT USER
   useEffect(() => {
     const load = async () => {
       const { data: auth } = await supabase.auth.getUser()
@@ -98,7 +102,7 @@ export default function Home() {
     load()
   }, [])
 
-  // 🔥 REALTIME + SOUND FIX
+  // 🔥 REALTIME
   useEffect(() => {
     let channel: any
 
@@ -114,7 +118,6 @@ export default function Home() {
 
             setTasks(prev => {
               if (payload.eventType === "INSERT") {
-                // 🔊 tylko dla odbiorcy taska
                 if (newRow.assigneeId === profile?.id) {
                   playSound()
                   vibrate()
@@ -145,6 +148,7 @@ export default function Home() {
     }
   }, [profile])
 
+  // 🔥 LOGIN
   const signIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -164,6 +168,7 @@ export default function Home() {
     setProfile(null)
   }
 
+  // 🔥 ADD TASK
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
 
@@ -231,6 +236,35 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
+  // 🔥 PUSH ENABLE (NOWE)
+  const enablePush = async () => {
+    if (!profile) return
+
+    const permission = await Notification.requestPermission()
+
+    if (permission !== "granted") {
+      alert("Brak zgody na powiadomienia")
+      return
+    }
+
+    const token = await getToken(messaging!, {
+      vapidKey:
+        "BE_iL4OXDZD-eCyKkDEoXoHKPdXKdFy7u6Jfu3cGuYw72VL77wFtESiIxP-SSeFmwcWA5AVa6VqnkezAKMCDgeQ"
+    })
+
+    if (!token) {
+      alert("Brak tokenu FCM")
+      return
+    }
+
+    await supabase
+      .from("profiles")
+      .update({ push_token: token })
+      .eq("id", profile.id)
+
+    alert("Powiadomienia aktywne 🔔")
+  }
+
   const received = tasks.filter(
     t => t.assigneeId === profile?.id && !t.archivedBy?.includes(profile.id)
   )
@@ -266,17 +300,11 @@ export default function Home() {
         ) : (
           <div className="flex gap-2 items-center">
             {!t.done ? (
-              <button
-                onClick={() => markDone(t.id)}
-                className="text-xs border px-2 py-1 rounded text-black"
-              >
+              <button onClick={() => markDone(t.id)} className="text-xs border px-2 py-1 rounded text-black">
                 Zrobione
               </button>
             ) : (
-              <button
-                onClick={() => archiveTask(t.id)}
-                className="text-xs text-blue-600 border px-2 py-1 rounded"
-              >
+              <button onClick={() => archiveTask(t.id)} className="text-xs text-blue-600 border px-2 py-1 rounded">
                 Archiwizuj
               </button>
             )}
@@ -331,6 +359,11 @@ export default function Home() {
 
           <button onClick={signOut} className="ml-2 border px-3 py-1 bg-white text-black rounded">
             Wyloguj
+          </button>
+
+          {/* 🔥 PUSH BUTTON */}
+          <button onClick={enablePush} className="ml-2 border px-3 py-1 bg-green-500 text-white rounded">
+            🔔 Push ON
           </button>
         </div>
 
