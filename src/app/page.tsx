@@ -31,8 +31,6 @@ export default function Home() {
   const [selectedDepartment, setSelectedDepartment] = useState(1)
   const [showForm, setShowForm] = useState(false)
 
-  const formRef = useRef<HTMLDivElement>(null)
-
   const [openSections, setOpenSections] = useState({
     otrzymane: true,
     wysłane: false,
@@ -55,11 +53,24 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [newTask, setNewTask] = useState("")
-
   const [loading, setLoading] = useState(true)
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+
+  // 🔊 SOUND
+  const playSound = () => {
+    const audio = new Audio("/notify.mp3")
+    audio.volume = 0.6
+    audio.play().catch(() => {})
+  }
+
+  // 📳 VIBRATION
+  const vibrate = () => {
+    if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 200])
+    }
+  }
 
   // 🔐 INIT USER
   useEffect(() => {
@@ -87,7 +98,7 @@ export default function Home() {
     load()
   }, [])
 
-  // 🔥 REALTIME
+  // 🔥 REALTIME + SOUND FIX
   useEffect(() => {
     let channel: any
 
@@ -103,6 +114,12 @@ export default function Home() {
 
             setTasks(prev => {
               if (payload.eventType === "INSERT") {
+                // 🔊 tylko dla odbiorcy taska
+                if (newRow.assigneeId === profile?.id) {
+                  playSound()
+                  vibrate()
+                }
+
                 return [...prev, newRow]
               }
 
@@ -126,7 +143,7 @@ export default function Home() {
     return () => {
       if (channel) supabase.removeChannel(channel)
     }
-  }, [])
+  }, [profile])
 
   const signIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -147,7 +164,6 @@ export default function Home() {
     setProfile(null)
   }
 
-  // 🔥 TASK DO CAŁEGO DZIAŁU (NA STANOWISKU)
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
 
@@ -159,11 +175,6 @@ export default function Home() {
     const targets = (candidates || []).filter(
       (p: any) => p.status === "na stanowisku"
     )
-
-    if (targets.length === 0) {
-      alert("Brak pracowników na stanowisku w tym dziale")
-      return
-    }
 
     for (const target of targets) {
       await supabase.from("tasks").insert({
@@ -192,17 +203,14 @@ export default function Home() {
       .eq("id", id)
   }
 
-  // 🔥 ARCHIVE PER USER (SLACK STYLE)
   const archiveTask = async (id: number) => {
     const task = tasks.find(t => t.id === id)
     if (!task || !profile) return
 
-    const existing = task.archivedBy || []
-
     await supabase
       .from("tasks")
       .update({
-        archivedBy: [...existing, profile.id]
+        archivedBy: [...(task.archivedBy || []), profile.id]
       })
       .eq("id", id)
   }
@@ -223,7 +231,6 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
-  // 🔥 FILTERS (NOWE ARCHIWUM PER USER)
   const received = tasks.filter(
     t => t.assigneeId === profile?.id && !t.archivedBy?.includes(profile.id)
   )
@@ -258,30 +265,20 @@ export default function Home() {
           <span>📦</span>
         ) : (
           <div className="flex gap-2 items-center">
-            {!Boolean(t.done) ? (
-              <>
-                <span className="text-xs text-gray-600">w trakcie</span>
-
-                {mode !== "sent" && (
-                  <button
-                    onClick={() => markDone(t.id)}
-                    className="text-xs border px-2 py-1 rounded text-black"
-                  >
-                    Zrobione
-                  </button>
-                )}
-              </>
+            {!t.done ? (
+              <button
+                onClick={() => markDone(t.id)}
+                className="text-xs border px-2 py-1 rounded text-black"
+              >
+                Zrobione
+              </button>
             ) : (
-              <>
-                <span className="text-green-600 text-xs">✔ zrobione</span>
-
-                <button
-                  onClick={() => archiveTask(t.id)}
-                  className="text-xs text-blue-600 border px-2 py-1 rounded"
-                >
-                  Archiwizuj
-                </button>
-              </>
+              <button
+                onClick={() => archiveTask(t.id)}
+                className="text-xs text-blue-600 border px-2 py-1 rounded"
+              >
+                Archiwizuj
+              </button>
             )}
           </div>
         )}
@@ -370,7 +367,7 @@ export default function Home() {
         </button>
         {openSections.otrzymane && renderTasks(received, "received")}
 
-        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border p-2 rounded mb-2 text-black flex items-center justify-center">
+        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
           Wysłane <Badge count={sent.length} />
         </button>
         {openSections.wysłane && renderTasks(sent, "sent")}
