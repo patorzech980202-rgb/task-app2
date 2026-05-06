@@ -389,9 +389,15 @@ export default function Home() {
         </button>
         {openSections.otrzymane && renderTasks(received, "received")}
 
-        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
-          Wysłane <Badge count={sent.length} />
-        </button>
+  <button
+  onClick={() => toggleSection("wysłane")}
+  className="w-full bg-white border p-2 rounded mb-2 text-black flex items-center justify-between"
+>
+  <span className="flex items-center gap-2">
+    Wysłane
+    <Badge count={sent.length} />
+  </span>
+</button>
         {openSections.wysłane && renderTasks(sent, "sent")}
 
         <button onClick={() => toggleSection("archiwum")} className="w-full bg-white border p-2 rounded mb-2 text-black">
