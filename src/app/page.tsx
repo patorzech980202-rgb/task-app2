@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase"
 
 // 🔥 Firebase Push
 import { getToken } from "firebase/messaging"
-import { messaging } from "@/lib/firebase"
+import { messaging } from "../../lib/firebase"
 
 type Task = {
   id: number
