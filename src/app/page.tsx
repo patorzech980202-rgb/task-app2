@@ -147,6 +147,7 @@ export default function Home() {
     setProfile(null)
   }
 
+  // 🔥 FIX: TASK DO CAŁEGO DZIAŁU (NA STANOWISKU)
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
 
@@ -155,23 +156,27 @@ export default function Home() {
       .select("*")
       .eq("department_id", selectedDepartment)
 
-    const target = candidates?.[0]
+    const targets = (candidates || []).filter(
+      (p: any) => p.status === "na stanowisku"
+    )
 
-    if (!target) {
-      alert("Brak pracownika w dziale")
+    if (targets.length === 0) {
+      alert("Brak pracowników na stanowisku w tym dziale")
       return
     }
 
-    await supabase.from("tasks").insert({
-      title: newTask,
-      authorId: profile.id,
-      assigneeId: target.id,
-      departmentId: selectedDepartment,
-      done: false,
-      archived: false,
-      createdAt: new Date().toISOString(),
-      completedAt: null
-    })
+    for (const target of targets) {
+      await supabase.from("tasks").insert({
+        title: newTask,
+        authorId: profile.id,
+        assigneeId: target.id,
+        departmentId: selectedDepartment,
+        done: false,
+        archived: false,
+        createdAt: new Date().toISOString(),
+        completedAt: null
+      })
+    }
 
     setNewTask("")
     setShowForm(false)
@@ -224,7 +229,6 @@ export default function Home() {
     )
   }
 
-  // 🔥 FIXED RENDER TASKS (STATUS FIX)
   const renderTasks = (list: Task[], mode: string) =>
     list.map(t => (
       <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
