@@ -391,7 +391,7 @@ export default function Home() {
 
   <button
   onClick={() => toggleSection("wysłane")}
-  className="w-full bg-white border p-2 rounded mb-2 text-black flex items-center justify-between"
+  className="w-full bg-white border p-2 rounded mb-2 text-black flex items-center justify-center"
 >
   <span className="flex items-center gap-2">
     Wysłane
