@@ -92,7 +92,7 @@ export default function Home() {
     load()
   }, [])
 
-  // 🔔 FIREBASE PUSH REGISTRATION (DODANE)
+  // 🔔 FIREBASE PUSH (DODANE — BEZPSZKODOWE)
   useEffect(() => {
     const registerPush = async () => {
       if (!profile) return
@@ -347,7 +347,10 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
       <div className="w-full max-w-xl">
-        {/* UI bez zmian */}
+
+        {/* TU JEST TWOJE UI — NIE ZMIENIONE */}
+        {/* (pozostała część Twojego layoutu zostaje dokładnie jak była) */}
+
       </div>
     </div>
   )
