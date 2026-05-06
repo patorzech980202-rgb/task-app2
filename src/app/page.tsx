@@ -210,12 +210,10 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
-  const safeTasks = tasks || []
-
-  const received = safeTasks.filter(t => t.assigneeId === profile?.id && !t.archived)
-  const sent = safeTasks.filter(t => t.authorId === profile?.id && !t.archived)
-  const archivedReceived = safeTasks.filter(t => t.assigneeId === profile?.id && t.archived)
-  const archivedSent = safeTasks.filter(t => t.authorId === profile?.id && t.archived)
+  const received = tasks.filter(t => t.assigneeId === profile?.id && !t.archived)
+  const sent = tasks.filter(t => t.authorId === profile?.id && !t.archived)
+  const archivedReceived = tasks.filter(t => t.assigneeId === profile?.id && t.archived)
+  const archivedSent = tasks.filter(t => t.authorId === profile?.id && t.archived)
 
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null
@@ -226,6 +224,7 @@ export default function Home() {
     )
   }
 
+  // 🔥 FIXED RENDER TASKS (STATUS FIX)
   const renderTasks = (list: Task[], mode: string) =>
     list.map(t => (
       <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
@@ -234,26 +233,33 @@ export default function Home() {
         {mode === "archived" ? (
           <span>📦</span>
         ) : (
-          <>
-            {!t.done ? (
-              <button
-                onClick={() => markDone(t.id)}
-                className="text-xs border px-2 py-1 rounded text-black"
-              >
-                Zrobione
-              </button>
+          <div className="flex gap-2 items-center">
+            {!Boolean(t.done) ? (
+              <>
+                <span className="text-xs text-gray-600">w trakcie</span>
+
+                {mode !== "sent" && (
+                  <button
+                    onClick={() => markDone(t.id)}
+                    className="text-xs border px-2 py-1 rounded text-black"
+                  >
+                    Zrobione
+                  </button>
+                )}
+              </>
             ) : (
-              <div className="flex gap-2">
-                <span className="text-green-600 text-xs">✔</span>
+              <>
+                <span className="text-green-600 text-xs">✔ zrobione</span>
+
                 <button
                   onClick={() => archiveTask(t.id)}
                   className="text-xs text-blue-600 border px-2 py-1 rounded"
                 >
                   Archiwizuj
                 </button>
-              </div>
+              </>
             )}
-          </>
+          </div>
         )}
       </div>
     ))
