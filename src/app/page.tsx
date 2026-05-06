@@ -262,24 +262,46 @@ export default function Home() {
       <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
         <span className="text-black">{t.title}</span>
 
-        {mode === "archived" ? (
-          <span>📦</span>
-        ) : (
-          <>
-            {!t.done ? (
-              <button onClick={() => markDone(t.id)} className="text-xs border px-2 py-1 rounded text-black">
-                Zrobione
-              </button>
-            ) : (
-              <div className="flex gap-2">
-                <span className="text-green-600 text-xs">✔</span>
-                <button onClick={() => archiveTask(t.id)} className="text-xs text-blue-600 border px-2 py-1 rounded">
-                  Archiwizuj
-                </button>
-              </div>
-            )}
-          </>
-        )}
+  {mode === "archived" ? (
+  <span>📦</span>
+) : mode === "sent" ? (
+  <div className="flex gap-2 items-center">
+    {!t.done ? (
+      <span className="text-xs text-gray-600">w trakcie</span>
+    ) : (
+      <>
+        <span className="text-green-600 text-xs">zrobione</span>
+        <button
+          onClick={() => archiveTask(t.id)}
+          className="text-xs text-blue-600 border px-2 py-1 rounded"
+        >
+          Archiwizuj
+        </button>
+      </>
+    )}
+  </div>
+) : (
+  <>
+    {!t.done ? (
+      <button
+        onClick={() => markDone(t.id)}
+        className="text-xs border px-2 py-1 rounded text-black"
+      >
+        Zrobione
+      </button>
+    ) : (
+      <div className="flex gap-2">
+        <span className="text-green-600 text-xs">✔</span>
+        <button
+          onClick={() => archiveTask(t.id)}
+          className="text-xs text-blue-600 border px-2 py-1 rounded"
+        >
+          Archiwizuj
+        </button>
+      </div>
+    )}
+  </>
+)}
       </div>
     ))
 
