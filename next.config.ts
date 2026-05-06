@@ -5,3 +5,12 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+module.exports = {
+  webpack: (config) => {
+    config.module.rules.push({
+      test: /\.ts$/,
+      exclude: /supabase/,
+    })
+    return config
+  }
+}
