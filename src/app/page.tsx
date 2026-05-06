@@ -61,20 +61,6 @@ export default function Home() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
 
-  // 🔊 SOUND + 📳 VIBRATION
-  const playSound = () => {
-    const audio = new Audio("/notification.mp3")
-    audio.play().catch(() => {
-      console.log("Sound blocked")
-    })
-  }
-
-  const vibrate = () => {
-    if (typeof window !== "undefined" && navigator.vibrate) {
-      navigator.vibrate(200)
-    }
-  }
-
   // 🔐 INIT USER
   useEffect(() => {
     const load = async () => {
@@ -89,9 +75,8 @@ export default function Home() {
         .from("profiles")
         .select("*")
         .eq("id", auth.user.id)
-        .single()
 
-      setProfile(prof)
+      setProfile(prof?.[0] || null)
 
       const { data } = await supabase.from("tasks").select("*")
       setTasks(data || [])
@@ -113,25 +98,16 @@ export default function Home() {
           "postgres_changes",
           { event: "*", schema: "public", table: "tasks" },
           (payload) => {
-            console.log("REALTIME EVENT:", payload)
-
             const newRow = payload.new as Task
             const oldRow = payload.old as Task
 
             setTasks(prev => {
               if (payload.eventType === "INSERT") {
-
-                // 🔥 HERE IS THE MAGIC (MESSENGER FEEL)
-                playSound()
-                vibrate()
-
                 return [...prev, newRow]
               }
 
               if (payload.eventType === "UPDATE") {
-                return prev.map(t =>
-                  t.id === newRow.id ? newRow : t
-                )
+                return prev.map(t => (t.id === newRow.id ? newRow : t))
               }
 
               if (payload.eventType === "DELETE") {
@@ -147,16 +123,8 @@ export default function Home() {
 
     connect()
 
-    const handleFocus = () => {
-      if (channel) supabase.removeChannel(channel)
-      connect()
-    }
-
-    window.addEventListener("focus", handleFocus)
-
     return () => {
       if (channel) supabase.removeChannel(channel)
-      window.removeEventListener("focus", handleFocus)
     }
   }, [])
 
@@ -242,21 +210,12 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
-  const received = tasks.filter(
-    t => t.assigneeId === profile?.id && !t.archived
-  )
+  const safeTasks = tasks || []
 
-  const sent = tasks.filter(
-    t => t.authorId === profile?.id && !t.archived
-  )
-
-  const archivedReceived = tasks.filter(
-    t => t.assigneeId === profile?.id && t.archived
-  )
-
-  const archivedSent = tasks.filter(
-    t => t.authorId === profile?.id && t.archived
-  )
+  const received = safeTasks.filter(t => t.assigneeId === profile?.id && !t.archived)
+  const sent = safeTasks.filter(t => t.authorId === profile?.id && !t.archived)
+  const archivedReceived = safeTasks.filter(t => t.assigneeId === profile?.id && t.archived)
+  const archivedSent = safeTasks.filter(t => t.authorId === profile?.id && t.archived)
 
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null
@@ -271,6 +230,31 @@ export default function Home() {
     list.map(t => (
       <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
         <span className="text-black">{t.title}</span>
+
+        {mode === "archived" ? (
+          <span>📦</span>
+        ) : (
+          <>
+            {!t.done ? (
+              <button
+                onClick={() => markDone(t.id)}
+                className="text-xs border px-2 py-1 rounded text-black"
+              >
+                Zrobione
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <span className="text-green-600 text-xs">✔</span>
+                <button
+                  onClick={() => archiveTask(t.id)}
+                  className="text-xs text-blue-600 border px-2 py-1 rounded"
+                >
+                  Archiwizuj
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
     ))
 
@@ -307,9 +291,21 @@ export default function Home() {
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
       <div className="w-full max-w-xl">
 
-        <h1 className="text-xl font-bold text-black mb-4">
-          Cześć, {profile.name}
-        </h1>
+        <div className="text-center mb-4">
+          <h1 className="text-2xl font-bold text-black">
+            Cześć, {profile.name}
+          </h1>
+
+          <p className="text-black">{profile.status}</p>
+
+          <button onClick={toggleStatus} className="border px-3 py-1 bg-white text-black rounded mt-2">
+            Zmień status
+          </button>
+
+          <button onClick={signOut} className="ml-2 border px-3 py-1 bg-white text-black rounded">
+            Wyloguj
+          </button>
+        </div>
 
         <div className="bg-white p-4 rounded-xl mb-4">
           <button onClick={() => setShowForm(!showForm)} className="w-full bg-black text-white py-2 rounded">
@@ -318,11 +314,19 @@ export default function Home() {
 
           {showForm && (
             <div className="mt-3 space-y-2">
-              <input
-                className="w-full border p-2"
+              <input className="w-full border p-2"
                 value={newTask}
                 onChange={e => setNewTask(e.target.value)}
               />
+
+              <select className="w-full border p-2"
+                value={selectedDepartment}
+                onChange={e => setSelectedDepartment(Number(e.target.value))}
+              >
+                {departments.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
 
               <button onClick={addTask} className="w-full bg-black text-white py-2 rounded">
                 Dodaj
@@ -330,6 +334,27 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        <button onClick={() => toggleSection("otrzymane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+          Otrzymane <Badge count={received.length} />
+        </button>
+        {openSections.otrzymane && renderTasks(received, "received")}
+
+        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border p-2 rounded mb-2 text-black flex items-center justify-center">
+          Wysłane <Badge count={sent.length} />
+        </button>
+        {openSections.wysłane && renderTasks(sent, "sent")}
+
+        <button onClick={() => toggleSection("archiwum")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+          Archiwum
+        </button>
+
+        {openSections.archiwum && (
+          <>
+            {renderTasks(archivedReceived, "archived")}
+            {renderTasks(archivedSent, "archived")}
+          </>
+        )}
 
       </div>
     </div>
