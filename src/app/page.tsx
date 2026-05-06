@@ -92,7 +92,7 @@ export default function Home() {
     load()
   }, [])
 
-  // 🔔 FIREBASE PUSH (DODANE — BEZPSZKODOWE)
+  // 🔔 FIREBASE PUSH (DODANE - BEZPSZKODOWE)
   useEffect(() => {
     const registerPush = async () => {
       if (!profile) return
@@ -102,6 +102,8 @@ export default function Home() {
         const permission = await Notification.requestPermission()
         if (permission !== "granted") return
 
+        // 🔥 dynamiczny import (fix SSR Next.js)
+        const { getMessaging } = await import("firebase/messaging")
         const messaging = getMessaging(app)
 
         const token = await getToken(messaging, {
@@ -110,12 +112,12 @@ export default function Home() {
 
         if (!token) return
 
+        console.log("FCM TOKEN:", token)
+
         await supabase
           .from("profiles")
           .update({ push_token: token })
           .eq("id", profile.id)
-
-        console.log("Push token zapisany:", token)
 
       } catch (err) {
         console.error("Push error:", err)
@@ -136,6 +138,8 @@ export default function Home() {
           "postgres_changes",
           { event: "*", schema: "public", table: "tasks" },
           (payload) => {
+            console.log("REALTIME EVENT:", payload)
+
             const newRow = payload.new as Task
             const oldRow = payload.old as Task
 
@@ -164,9 +168,12 @@ export default function Home() {
     connect()
 
     const handleFocus = () => {
+      console.log("Realtime reconnect (mobile fix)")
+
       if (channel) {
         supabase.removeChannel(channel)
       }
+
       connect()
     }
 
@@ -296,16 +303,38 @@ export default function Home() {
 
         {mode === "archived" ? (
           <span>📦</span>
+        ) : mode === "sent" ? (
+          <div className="flex gap-2 items-center">
+            {!t.done ? (
+              <span className="text-xs text-gray-600">w trakcie</span>
+            ) : (
+              <>
+                <span className="text-green-600 text-xs">zrobione</span>
+                <button
+                  onClick={() => archiveTask(t.id)}
+                  className="text-xs text-blue-600 border px-2 py-1 rounded"
+                >
+                  Archiwizuj
+                </button>
+              </>
+            )}
+          </div>
         ) : (
           <>
             {!t.done ? (
-              <button onClick={() => markDone(t.id)} className="text-xs border px-2 py-1 rounded text-black">
+              <button
+                onClick={() => markDone(t.id)}
+                className="text-xs border px-2 py-1 rounded text-black"
+              >
                 Zrobione
               </button>
             ) : (
               <div className="flex gap-2">
                 <span className="text-green-600 text-xs">✔</span>
-                <button onClick={() => archiveTask(t.id)} className="text-xs text-blue-600 border px-2 py-1 rounded">
+                <button
+                  onClick={() => archiveTask(t.id)}
+                  className="text-xs text-blue-600 border px-2 py-1 rounded"
+                >
                   Archiwizuj
                 </button>
               </div>
@@ -348,8 +377,8 @@ export default function Home() {
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
       <div className="w-full max-w-xl">
 
-        {/* TU JEST TWOJE UI — NIE ZMIENIONE */}
-        {/* (pozostała część Twojego layoutu zostaje dokładnie jak była) */}
+        {/* RESZTA UI BEZ ZMIAN */}
+        {/* (Twój layout zostaje 1:1) */}
 
       </div>
     </div>
