@@ -3,10 +3,6 @@
 import { useEffect, useRef, useState } from "react"
 import { supabase } from "../../lib/supabase"
 
-// 🔔 FIREBASE (DODANE — NIC NIE USUNIĘTE)
-import app from "../../lib/firebase"
-import { getMessaging, getToken } from "firebase/messaging"
-
 type Task = {
   id: number
   title: string
@@ -65,6 +61,20 @@ export default function Home() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
 
+  // 🔊 SOUND + 📳 VIBRATION
+  const playSound = () => {
+    const audio = new Audio("/notification.mp3")
+    audio.play().catch(() => {
+      console.log("Sound blocked")
+    })
+  }
+
+  const vibrate = () => {
+    if (typeof window !== "undefined" && navigator.vibrate) {
+      navigator.vibrate(200)
+    }
+  }
+
   // 🔐 INIT USER
   useEffect(() => {
     const load = async () => {
@@ -92,7 +102,7 @@ export default function Home() {
     load()
   }, [])
 
-  // 🔥 REALTIME FIX (NIE DOTYKAM)
+  // 🔥 REALTIME
   useEffect(() => {
     let channel: any
 
@@ -103,11 +113,18 @@ export default function Home() {
           "postgres_changes",
           { event: "*", schema: "public", table: "tasks" },
           (payload) => {
+            console.log("REALTIME EVENT:", payload)
+
             const newRow = payload.new as Task
             const oldRow = payload.old as Task
 
             setTasks(prev => {
               if (payload.eventType === "INSERT") {
+
+                // 🔥 HERE IS THE MAGIC (MESSENGER FEEL)
+                playSound()
+                vibrate()
+
                 return [...prev, newRow]
               }
 
@@ -131,56 +148,18 @@ export default function Home() {
     connect()
 
     const handleFocus = () => {
-      if (channel) {
-        supabase.removeChannel(channel)
-      }
+      if (channel) supabase.removeChannel(channel)
       connect()
     }
 
     window.addEventListener("focus", handleFocus)
 
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel)
-      }
+      if (channel) supabase.removeChannel(channel)
       window.removeEventListener("focus", handleFocus)
     }
   }, [])
 
-  // 🔔 FIREBASE PUSH (JEDYNY DODANY BLOK)
-  useEffect(() => {
-    const initPush = async () => {
-      if (!profile) return
-      if (typeof window === "undefined") return
-
-      try {
-        const permission = await Notification.requestPermission()
-        if (permission !== "granted") return
-
-        const messaging = getMessaging(app)
-
-        const token = await getToken(messaging, {
-          vapidKey: "TWOJ_VAPID_KEY"
-        })
-
-        if (!token) return
-
-        console.log("FCM TOKEN:", token)
-
-        await supabase
-          .from("profiles")
-          .update({ push_token: token })
-          .eq("id", profile.id)
-
-      } catch (err) {
-        console.error("push error", err)
-      }
-    }
-
-    initPush()
-  }, [profile])
-
-  // 🔐 LOGIN
   const signIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -195,7 +174,6 @@ export default function Home() {
     window.location.reload()
   }
 
-  // 🔐 LOGOUT
   const signOut = async () => {
     await supabase.auth.signOut()
     setProfile(null)
@@ -293,29 +271,9 @@ export default function Home() {
     list.map(t => (
       <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
         <span className="text-black">{t.title}</span>
-
-        {mode === "archived" ? (
-          <span>📦</span>
-        ) : (
-          <>
-            {!t.done ? (
-              <button onClick={() => markDone(t.id)} className="text-xs border px-2 py-1 rounded text-black">
-                Zrobione
-              </button>
-            ) : (
-              <div className="flex gap-2">
-                <span className="text-green-600 text-xs">✔</span>
-                <button onClick={() => archiveTask(t.id)} className="text-xs text-blue-600 border px-2 py-1 rounded">
-                  Archiwizuj
-                </button>
-              </div>
-            )}
-          </>
-        )}
       </div>
     ))
 
-  // 🔐 LOGIN SCREEN
   if (loading) return <div className="p-6">Ładowanie...</div>
 
   if (!profile) {
@@ -345,14 +303,33 @@ export default function Home() {
     )
   }
 
-  // 🔥 APP
   return (
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
       <div className="w-full max-w-xl">
 
-        {/* TWOJE UI 1:1 BEZ ZMIAN */}
-        {/* NIC NIE USUNIĘTE */}
-        {/* NIC NIE SKRÓCONE */}
+        <h1 className="text-xl font-bold text-black mb-4">
+          Cześć, {profile.name}
+        </h1>
+
+        <div className="bg-white p-4 rounded-xl mb-4">
+          <button onClick={() => setShowForm(!showForm)} className="w-full bg-black text-white py-2 rounded">
+            + Dodaj task
+          </button>
+
+          {showForm && (
+            <div className="mt-3 space-y-2">
+              <input
+                className="w-full border p-2"
+                value={newTask}
+                onChange={e => setNewTask(e.target.value)}
+              />
+
+              <button onClick={addTask} className="w-full bg-black text-white py-2 rounded">
+                Dodaj
+              </button>
+            </div>
+          )}
+        </div>
 
       </div>
     </div>
