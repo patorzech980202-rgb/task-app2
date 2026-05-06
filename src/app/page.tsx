@@ -12,7 +12,7 @@ type Task = {
   done: boolean
   completedAt: string | null
   createdAt: string
-  archived: boolean
+  archivedBy: string[]
 }
 
 type Status = "na stanowisku" | "poza stanowiskiem"
@@ -147,7 +147,7 @@ export default function Home() {
     setProfile(null)
   }
 
-  // 🔥 FIX: TASK DO CAŁEGO DZIAŁU (NA STANOWISKU)
+  // 🔥 TASK DO CAŁEGO DZIAŁU (NA STANOWISKU)
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
 
@@ -172,7 +172,7 @@ export default function Home() {
         assigneeId: target.id,
         departmentId: selectedDepartment,
         done: false,
-        archived: false,
+        archivedBy: [],
         createdAt: new Date().toISOString(),
         completedAt: null
       })
@@ -192,10 +192,18 @@ export default function Home() {
       .eq("id", id)
   }
 
+  // 🔥 ARCHIVE PER USER (SLACK STYLE)
   const archiveTask = async (id: number) => {
+    const task = tasks.find(t => t.id === id)
+    if (!task || !profile) return
+
+    const existing = task.archivedBy || []
+
     await supabase
       .from("tasks")
-      .update({ archived: true })
+      .update({
+        archivedBy: [...existing, profile.id]
+      })
       .eq("id", id)
   }
 
@@ -215,10 +223,22 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
-  const received = tasks.filter(t => t.assigneeId === profile?.id && !t.archived)
-  const sent = tasks.filter(t => t.authorId === profile?.id && !t.archived)
-  const archivedReceived = tasks.filter(t => t.assigneeId === profile?.id && t.archived)
-  const archivedSent = tasks.filter(t => t.authorId === profile?.id && t.archived)
+  // 🔥 FILTERS (NOWE ARCHIWUM PER USER)
+  const received = tasks.filter(
+    t => t.assigneeId === profile?.id && !t.archivedBy?.includes(profile.id)
+  )
+
+  const sent = tasks.filter(
+    t => t.authorId === profile?.id && !t.archivedBy?.includes(profile.id)
+  )
+
+  const archivedReceived = tasks.filter(
+    t => t.assigneeId === profile?.id && t.archivedBy?.includes(profile.id)
+  )
+
+  const archivedSent = tasks.filter(
+    t => t.authorId === profile?.id && t.archivedBy?.includes(profile.id)
+  )
 
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null
