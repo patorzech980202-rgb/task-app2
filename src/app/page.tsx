@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { supabase } from "../../lib/supabase"
 
-// 🔥 Firebase Push
+// Firebase Push
 import { getToken } from "firebase/messaging"
 import { messaging } from "../../lib/firebase"
 
@@ -27,6 +27,7 @@ type Profile = {
   surname?: string
   department_id: number
   status: Status
+  push_token?: string | null
 }
 
 type SectionKey = "otrzymane" | "wysłane" | "archiwum"
@@ -38,20 +39,20 @@ export default function Home() {
   const [openSections, setOpenSections] = useState({
     otrzymane: true,
     wysłane: false,
-    archiwum: false
+    archiwum: false,
   })
 
   const toggleSection = (key: SectionKey) => {
-    setOpenSections(prev => ({
+    setOpenSections((prev) => ({
       ...prev,
-      [key]: !prev[key]
+      [key]: !prev[key],
     }))
   }
 
   const departments = [
     { id: 1, name: "POKOJOWE" },
     { id: 2, name: "SZEFOWA" },
-    { id: 3, name: "RECEPCJA" }
+    { id: 3, name: "RECEPCJA" },
   ]
 
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -62,21 +63,21 @@ export default function Home() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
 
-  // 🔊 SOUND
+  // SOUND
   const playSound = () => {
     const audio = new Audio("/notify.mp3")
     audio.volume = 0.6
     audio.play().catch(() => {})
   }
 
-  // 📳 VIBRATION
+  // VIBRATION
   const vibrate = () => {
     if (navigator.vibrate) {
       navigator.vibrate([200, 100, 200])
     }
   }
 
-  // 🔥 INIT USER
+  // INIT USER
   useEffect(() => {
     const load = async () => {
       const { data: auth } = await supabase.auth.getUser()
@@ -90,8 +91,9 @@ export default function Home() {
         .from("profiles")
         .select("*")
         .eq("id", auth.user.id)
+        .single()
 
-      setProfile(prof?.[0] || null)
+      setProfile(prof || null)
 
       const { data } = await supabase.from("tasks").select("*")
       setTasks(data || [])
@@ -102,61 +104,57 @@ export default function Home() {
     load()
   }, [])
 
-  // 🔥 REALTIME
+  // REALTIME
   useEffect(() => {
-    let channel: any
+    if (!profile) return
 
-    const connect = () => {
-      channel = supabase
-        .channel("tasks-live")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "tasks" },
-          (payload) => {
-            const newRow = payload.new as Task
-            const oldRow = payload.old as Task
+    const channel = supabase
+      .channel("tasks-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tasks" },
+        (payload) => {
+          const newRow = payload.new as Task
+          const oldRow = payload.old as Task
 
-            setTasks(prev => {
-              if (payload.eventType === "INSERT") {
-                if (newRow.assigneeId === profile?.id) {
-                  playSound()
-                  vibrate()
-                }
-
-                return [...prev, newRow]
+          setTasks((prev) => {
+            if (payload.eventType === "INSERT") {
+              if (newRow.assigneeId === profile.id) {
+                playSound()
+                vibrate()
               }
 
-              if (payload.eventType === "UPDATE") {
-                return prev.map(t => (t.id === newRow.id ? newRow : t))
-              }
+              return [...prev, newRow]
+            }
 
-              if (payload.eventType === "DELETE") {
-                return prev.filter(t => t.id !== oldRow.id)
-              }
+            if (payload.eventType === "UPDATE") {
+              return prev.map((t) => (t.id === newRow.id ? newRow : t))
+            }
 
-              return prev
-            })
-          }
-        )
-        .subscribe()
-    }
+            if (payload.eventType === "DELETE") {
+              return prev.filter((t) => t.id !== oldRow.id)
+            }
 
-    connect()
+            return prev
+          })
+        }
+      )
+      .subscribe()
 
     return () => {
-      if (channel) supabase.removeChannel(channel)
+      supabase.removeChannel(channel)
     }
   }, [profile])
 
-  // 🔥 LOGIN
+  // LOGIN
   const signIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
-      password
+      password,
     })
 
     if (error) {
-      alert("Błąd logowania")
+      alert("Błąd logowania: " + error.message)
       return
     }
 
@@ -168,30 +166,58 @@ export default function Home() {
     setProfile(null)
   }
 
-  // 🔥 ADD TASK
+  // ADD TASK (WERSJA DIAGNOSTYCZNA)
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
 
-    const { data: candidates } = await supabase
+    const { data: candidates, error: candidatesError } = await supabase
       .from("profiles")
       .select("*")
       .eq("department_id", selectedDepartment)
 
+    console.log("candidates:", candidates)
+    console.log("candidatesError:", candidatesError)
+
+    if (candidatesError) {
+      alert("Błąd pobierania pracowników: " + candidatesError.message)
+      return
+    }
+
     const targets = (candidates || []).filter(
-      (p: any) => p.status === "na stanowisku"
+      (p: Profile) => p.status === "na stanowisku"
     )
 
-    for (const target of targets) {
-      await supabase.from("tasks").insert({
-        title: newTask,
-        authorId: profile.id,
-        assigneeId: target.id,
-        departmentId: selectedDepartment,
-        done: false,
-        archivedBy: [],
-        createdAt: new Date().toISOString(),
-        completedAt: null
-      })
+    console.log("targets:", targets)
+
+    if (targets.length === 0) {
+      alert("Brak pracowników na stanowisku w tym dziale.")
+      return
+    }
+
+    const rows = targets.map((target: Profile) => ({
+      title: newTask,
+      authorId: profile.id,
+      assigneeId: target.id,
+      departmentId: selectedDepartment,
+      done: false,
+      archivedBy: [],
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    }))
+
+    console.log("rows:", rows)
+
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert(rows)
+      .select()
+
+    console.log("insert data:", data)
+    console.log("insert error:", error)
+
+    if (error) {
+      alert("Błąd zapisu taska: " + error.message)
+      return
     }
 
     setNewTask("")
@@ -203,19 +229,19 @@ export default function Home() {
       .from("tasks")
       .update({
         done: true,
-        completedAt: new Date().toISOString()
+        completedAt: new Date().toISOString(),
       })
       .eq("id", id)
   }
 
   const archiveTask = async (id: number) => {
-    const task = tasks.find(t => t.id === id)
+    const task = tasks.find((t) => t.id === id)
     if (!task || !profile) return
 
     await supabase
       .from("tasks")
       .update({
-        archivedBy: [...(task.archivedBy || []), profile.id]
+        archivedBy: [...(task.archivedBy || []), profile.id],
       })
       .eq("id", id)
   }
@@ -236,9 +262,12 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
-  // 🔥 PUSH ENABLE (NOWE)
+  // PUSH ENABLE
   const enablePush = async () => {
-    if (!profile) return
+    if (!profile || !messaging) {
+      alert("Firebase Messaging niedostępny")
+      return
+    }
 
     const permission = await Notification.requestPermission()
 
@@ -247,9 +276,9 @@ export default function Home() {
       return
     }
 
-    const token = await getToken(messaging!, {
+    const token = await getToken(messaging, {
       vapidKey:
-        "BE_iL4OXDZD-eCyKkDEoXoHKPdXKdFy7u6Jfu3cGuYw72VL77wFtESiIxP-SSeFmwcWA5AVa6VqnkezAKMCDgeQ"
+        "BE_iL4OXDZD-eCyKkDEoXoHKPdXKdFy7u6Jfu3cGuYw72VL77wFtESiIxP-SSeFmwcWA5AVa6VqnkezAKMCDgeQ",
     })
 
     if (!token) {
@@ -257,32 +286,46 @@ export default function Home() {
       return
     }
 
-    await supabase
+    const { error } = await supabase
       .from("profiles")
       .update({ push_token: token })
       .eq("id", profile.id)
+
+    if (error) {
+      alert("Błąd zapisu tokenu: " + error.message)
+      return
+    }
 
     alert("Powiadomienia aktywne 🔔")
   }
 
   const received = tasks.filter(
-    t => t.assigneeId === profile?.id && !t.archivedBy?.includes(profile.id)
+    (t) =>
+      t.assigneeId === profile?.id &&
+      !t.archivedBy?.includes(profile.id)
   )
 
   const sent = tasks.filter(
-    t => t.authorId === profile?.id && !t.archivedBy?.includes(profile.id)
+    (t) =>
+      t.authorId === profile?.id &&
+      !t.archivedBy?.includes(profile.id)
   )
 
   const archivedReceived = tasks.filter(
-    t => t.assigneeId === profile?.id && t.archivedBy?.includes(profile.id)
+    (t) =>
+      t.assigneeId === profile?.id &&
+      t.archivedBy?.includes(profile.id)
   )
 
   const archivedSent = tasks.filter(
-    t => t.authorId === profile?.id && t.archivedBy?.includes(profile.id)
+    (t) =>
+      t.authorId === profile?.id &&
+      t.archivedBy?.includes(profile.id)
   )
 
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null
+
     return (
       <span className="ml-2 w-5 h-5 bg-red-500 rounded-full text-black text-xs flex items-center justify-center">
         {count}
@@ -291,8 +334,11 @@ export default function Home() {
   }
 
   const renderTasks = (list: Task[], mode: string) =>
-    list.map(t => (
-      <div key={t.id} className="flex justify-between p-3 bg-white border rounded-xl mb-2">
+    list.map((t) => (
+      <div
+        key={t.id}
+        className="flex justify-between p-3 bg-white border rounded-xl mb-2"
+      >
         <span className="text-black">{t.title}</span>
 
         {mode === "archived" ? (
@@ -300,11 +346,17 @@ export default function Home() {
         ) : (
           <div className="flex gap-2 items-center">
             {!t.done ? (
-              <button onClick={() => markDone(t.id)} className="text-xs border px-2 py-1 rounded text-black">
+              <button
+                onClick={() => markDone(t.id)}
+                className="text-xs border px-2 py-1 rounded text-black"
+              >
                 Zrobione
               </button>
             ) : (
-              <button onClick={() => archiveTask(t.id)} className="text-xs text-blue-600 border px-2 py-1 rounded">
+              <button
+                onClick={() => archiveTask(t.id)}
+                className="text-xs text-blue-600 border px-2 py-1 rounded"
+              >
                 Archiwizuj
               </button>
             )}
@@ -321,20 +373,25 @@ export default function Home() {
         <div className="bg-white p-6 rounded-xl w-80 space-y-3">
           <h1 className="text-black font-bold text-xl">Logowanie</h1>
 
-          <input className="w-full border p-2 text-black"
+          <input
+            className="w-full border p-2 text-black"
             placeholder="email"
             value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
           />
 
-          <input className="w-full border p-2 text-black"
+          <input
+            className="w-full border p-2 text-black"
             placeholder="hasło"
             type="password"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value)}
           />
 
-          <button onClick={signIn} className="w-full bg-black text-white py-2 rounded">
+          <button
+            onClick={signIn}
+            className="w-full bg-black text-white py-2 rounded"
+          >
             Zaloguj
           </button>
         </div>
@@ -345,7 +402,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
       <div className="w-full max-w-xl">
-
         <div className="text-center mb-4">
           <h1 className="text-2xl font-bold text-black">
             Cześć, {profile.name}
@@ -353,59 +409,88 @@ export default function Home() {
 
           <p className="text-black">{profile.status}</p>
 
-          <button onClick={toggleStatus} className="border px-3 py-1 bg-white text-black rounded mt-2">
+          <button
+            onClick={toggleStatus}
+            className="border px-3 py-1 bg-white text-black rounded mt-2"
+          >
             Zmień status
           </button>
 
-          <button onClick={signOut} className="ml-2 border px-3 py-1 bg-white text-black rounded">
+          <button
+            onClick={signOut}
+            className="ml-2 border px-3 py-1 bg-white text-black rounded"
+          >
             Wyloguj
           </button>
 
-          {/* 🔥 PUSH BUTTON */}
-          <button onClick={enablePush} className="ml-2 border px-3 py-1 bg-green-500 text-white rounded">
+          <button
+            onClick={enablePush}
+            className="ml-2 border px-3 py-1 bg-green-500 text-white rounded"
+          >
             🔔 Push ON
           </button>
         </div>
 
         <div className="bg-white p-4 rounded-xl mb-4">
-          <button onClick={() => setShowForm(!showForm)} className="w-full bg-black text-white py-2 rounded">
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="w-full bg-black text-white py-2 rounded"
+          >
             + Dodaj task
           </button>
 
           {showForm && (
             <div className="mt-3 space-y-2">
-              <input className="w-full border p-2"
+              <input
+                className="w-full border p-2 text-black"
                 value={newTask}
-                onChange={e => setNewTask(e.target.value)}
+                onChange={(e) => setNewTask(e.target.value)}
               />
 
-              <select className="w-full border p-2"
+              <select
+                className="w-full border p-2 text-black"
                 value={selectedDepartment}
-                onChange={e => setSelectedDepartment(Number(e.target.value))}
+                onChange={(e) =>
+                  setSelectedDepartment(Number(e.target.value))
+                }
               >
-                {departments.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
                 ))}
               </select>
 
-              <button onClick={addTask} className="w-full bg-black text-white py-2 rounded">
+              <button
+                onClick={addTask}
+                className="w-full bg-black text-white py-2 rounded"
+              >
                 Dodaj
               </button>
             </div>
           )}
         </div>
 
-        <button onClick={() => toggleSection("otrzymane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+        <button
+          onClick={() => toggleSection("otrzymane")}
+          className="w-full bg-white border p-2 rounded mb-2 text-black"
+        >
           Otrzymane <Badge count={received.length} />
         </button>
         {openSections.otrzymane && renderTasks(received, "received")}
 
-        <button onClick={() => toggleSection("wysłane")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+        <button
+          onClick={() => toggleSection("wysłane")}
+          className="w-full bg-white border p-2 rounded mb-2 text-black"
+        >
           Wysłane <Badge count={sent.length} />
         </button>
         {openSections.wysłane && renderTasks(sent, "sent")}
 
-        <button onClick={() => toggleSection("archiwum")} className="w-full bg-white border p-2 rounded mb-2 text-black">
+        <button
+          onClick={() => toggleSection("archiwum")}
+          className="w-full bg-white border p-2 rounded mb-2 text-black"
+        >
           Archiwum
         </button>
 
@@ -415,7 +500,6 @@ export default function Home() {
             {renderTasks(archivedSent, "archived")}
           </>
         )}
-
       </div>
     </div>
   )
