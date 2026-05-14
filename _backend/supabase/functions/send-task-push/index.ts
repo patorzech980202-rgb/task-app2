@@ -90,13 +90,26 @@ serve(async (req: Request): Promise<Response> => {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          message: {
-            token,
-            notification: {
-              title: "Task App",
-              body: `📥 ${task.title}`
-            },
+        message: {
+  token,
+
+  data: {
+    title: "Task App",
+    body: `📥 ${task.title}`
+  },
+
+  webpush: {
+    notification: {
+      title: "Task App",
+      body: `📥 ${task.title}`,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      vibrate: [700, 300, 700, 300, 700],
+      requireInteraction: true,
+      silent: false
+    }
+  }
+},
             android: {
               notification: {
                 sound: "default"

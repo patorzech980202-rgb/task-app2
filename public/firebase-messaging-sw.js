@@ -14,11 +14,14 @@ const messaging = firebase.messaging()
 
 messaging.onBackgroundMessage((payload) => {
   self.registration.showNotification(
-    payload.notification?.title || "Task App",
+    payload.data?.title || "Task App",
     {
-      body: payload.notification?.body || "Masz nowe zadanie",
+      body: payload.data?.body || "Masz nowe zadanie",
       icon: "/icon-192.png",
-      badge: "/icon-192.png"
+      badge: "/icon-192.png",
+      vibrate: [700, 300, 700, 300, 700],
+      requireInteraction: true,
+      silent: false
     }
   )
 })
