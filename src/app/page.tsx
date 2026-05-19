@@ -3,10 +3,6 @@
 import { useEffect, useState } from "react"
 import { supabase } from "../../lib/supabase"
 
-// Firebase Push
-import { getToken } from "firebase/messaging"
-import { messaging } from "../../lib/firebase"
-
 type Task = {
   id: number
   title: string
@@ -63,21 +59,18 @@ export default function Home() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
 
-  // SOUND
   const playSound = () => {
     const audio = new Audio("/notify.mp3")
     audio.volume = 0.6
     audio.play().catch(() => {})
   }
 
-  // VIBRATION
   const vibrate = () => {
     if (navigator.vibrate) {
       navigator.vibrate([200, 100, 200])
     }
   }
 
-  // INIT USER
   useEffect(() => {
     const load = async () => {
       const { data: auth } = await supabase.auth.getUser()
@@ -104,7 +97,6 @@ export default function Home() {
     load()
   }, [])
 
-  // REALTIME
   useEffect(() => {
     if (!profile) return
 
@@ -146,7 +138,6 @@ export default function Home() {
     }
   }, [profile])
 
-  // LOGIN
   const signIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -166,7 +157,6 @@ export default function Home() {
     setProfile(null)
   }
 
-  // ADD TASK (WERSJA DIAGNOSTYCZNA)
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
 
@@ -215,36 +205,36 @@ export default function Home() {
     console.log("insert data:", data)
     console.log("insert error:", error)
 
-if (error) {
-  alert("Błąd zapisu taska: " + error.message)
-  return
-}
-
-for (const target of targets) {
-  const res = await fetch(
-    "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        userId: target.id,
-        title: "Nowe zadanie",
-        body: newTask,
-      }),
+    if (error) {
+      alert("Błąd zapisu taska: " + error.message)
+      return
     }
-  )
 
-  console.log("push response status:", res.status)
+    for (const target of targets) {
+      const res = await fetch(
+        "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: target.id,
+            title: "Nowe zadanie",
+            body: newTask,
+          }),
+        }
+      )
 
-  const responseText = await res.text()
+      console.log("push response status:", res.status)
 
-  console.log("push response body:", responseText)
-}
+      const responseText = await res.text()
 
-setNewTask("")
-setShowForm(false)
+      console.log("push response body:", responseText)
+    }
+
+    setNewTask("")
+    setShowForm(false)
   }
 
   const markDone = async (id: number) => {
@@ -285,7 +275,6 @@ setShowForm(false)
     setProfile({ ...profile, status: newStatus })
   }
 
-  // PUSH ENABLE
   const enablePush = async () => {
     if (!("serviceWorker" in navigator)) {
       alert("Ta przeglądarka nie obsługuje Service Workera")
@@ -304,26 +293,28 @@ setShowForm(false)
       return
     }
 
-const registration = await navigator.serviceWorker.ready
+    const registration = await navigator.serviceWorker.ready
 
-const oldSubscription =
-  await registration.pushManager.getSubscription()
+    const oldSubscription = await registration.pushManager.getSubscription()
 
-if (oldSubscription) {
-  await oldSubscription.unsubscribe()
-}
+    if (oldSubscription) {
+      await oldSubscription.unsubscribe()
+    }
 
-const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
-if (!publicKey) {
-  alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
-  return
-}
+    console.log("FRONT vapid public length:", publicKey?.length)
+    console.log("FRONT vapid public first chars:", publicKey?.slice(0, 12))
 
-const subscription = await registration.pushManager.subscribe({
-  userVisibleOnly: true,
-  applicationServerKey: publicKey,
-})
+    if (!publicKey) {
+      alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
+      return
+    }
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: publicKey,
+    })
 
     const { data: auth } = await supabase.auth.getUser()
 
