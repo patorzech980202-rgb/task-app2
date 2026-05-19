@@ -214,6 +214,7 @@ export default function Home() {
 
     console.log("insert data:", data)
     console.log("insert error:", error)
+
 if (error) {
   alert("Błąd zapisu taska: " + error.message)
   return
@@ -238,6 +239,8 @@ for (const target of targets) {
 
 setNewTask("")
 setShowForm(false)
+  }
+
   const markDone = async (id: number) => {
     await supabase
       .from("tasks")
