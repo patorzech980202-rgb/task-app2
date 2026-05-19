@@ -304,19 +304,26 @@ setShowForm(false)
       return
     }
 
-    const registration = await navigator.serviceWorker.ready
+const registration = await navigator.serviceWorker.ready
 
-    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+const oldSubscription =
+  await registration.pushManager.getSubscription()
 
-    if (!publicKey) {
-      alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
-      return
-    }
+if (oldSubscription) {
+  await oldSubscription.unsubscribe()
+}
 
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: publicKey,
-    })
+const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+
+if (!publicKey) {
+  alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
+  return
+}
+
+const subscription = await registration.pushManager.subscribe({
+  userVisibleOnly: true,
+  applicationServerKey: publicKey,
+})
 
     const { data: auth } = await supabase.auth.getUser()
 
