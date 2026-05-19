@@ -221,7 +221,7 @@ if (error) {
 }
 
 for (const target of targets) {
-  await fetch(
+  const res = await fetch(
     "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
     {
       method: "POST",
@@ -235,6 +235,12 @@ for (const target of targets) {
       }),
     }
   )
+
+  console.log("push response status:", res.status)
+
+  const responseText = await res.text()
+
+  console.log("push response body:", responseText)
 }
 
 setNewTask("")
