@@ -214,16 +214,30 @@ export default function Home() {
 
     console.log("insert data:", data)
     console.log("insert error:", error)
+if (error) {
+  alert("Błąd zapisu taska: " + error.message)
+  return
+}
 
-    if (error) {
-      alert("Błąd zapisu taska: " + error.message)
-      return
+for (const target of targets) {
+  await fetch(
+    "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: target.id,
+        title: "Nowe zadanie",
+        body: newTask,
+      }),
     }
+  )
+}
 
-    setNewTask("")
-    setShowForm(false)
-  }
-
+setNewTask("")
+setShowForm(false)
   const markDone = async (id: number) => {
     await supabase
       .from("tasks")
