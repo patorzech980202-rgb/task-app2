@@ -264,8 +264,13 @@ export default function Home() {
 
   // PUSH ENABLE
   const enablePush = async () => {
-    if (!profile || !messaging) {
-      alert("Firebase Messaging niedostępny")
+    if (!("serviceWorker" in navigator)) {
+      alert("Ta przeglądarka nie obsługuje Service Workera")
+      return
+    }
+
+    if (!("PushManager" in window)) {
+      alert("Ta przeglądarka nie obsługuje powiadomień push")
       return
     }
 
@@ -276,23 +281,35 @@ export default function Home() {
       return
     }
 
-    const token = await getToken(messaging, {
-      vapidKey:
-        "BE_iL4OXDZD-eCyKkDEoXoHKPdXKdFy7u6Jfu3cGuYw72VL77wFtESiIxP-SSeFmwcWA5AVa6VqnkezAKMCDgeQ",
-    })
+    const registration = await navigator.serviceWorker.ready
 
-    if (!token) {
-      alert("Brak tokenu FCM")
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+
+    if (!publicKey) {
+      alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
       return
     }
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({ push_token: token })
-      .eq("id", profile.id)
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: publicKey,
+    })
+
+    const { data: auth } = await supabase.auth.getUser()
+
+    if (!auth.user) {
+      alert("Musisz być zalogowany")
+      return
+    }
+
+    const { error } = await supabase.from("push_subscriptions").insert({
+      user_id: auth.user.id,
+      subscription: JSON.parse(JSON.stringify(subscription)),
+    })
 
     if (error) {
-      alert("Błąd zapisu tokenu: " + error.message)
+      console.error(error)
+      alert("Nie udało się zapisać subskrypcji")
       return
     }
 
