@@ -313,7 +313,8 @@ export default function Home() {
       return
     }
 
-    const registration = await navigator.serviceWorker.ready
+    const registration = await navigator.serviceWorker.register("/sw.js")
+    await navigator.serviceWorker.ready
 
     const oldSubscription = await registration.pushManager.getSubscription()
 
