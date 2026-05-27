@@ -294,7 +294,8 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
-  const enablePush = async () => {
+ const enablePush = async () => {
+  try {
     if (!("serviceWorker" in navigator)) {
       alert("Ta przeglądarka nie obsługuje Service Workera")
       return
@@ -331,9 +332,11 @@ export default function Home() {
     }
 
     const subscription = await registration.pushManager.subscribe({
-  userVisibleOnly: true,
-  applicationServerKey: urlBase64ToUint8Array(publicKey),
-   })
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    })
+
+    console.log("subscription:", subscription)
 
     const { data: auth } = await supabase.auth.getUser()
 
@@ -348,12 +351,16 @@ export default function Home() {
     })
 
     if (error) {
-      console.error(error)
-      alert("Nie udało się zapisać subskrypcji")
+      console.error("push subscription insert error:", error)
+      alert("Nie udało się zapisać subskrypcji: " + error.message)
       return
     }
 
     alert("Powiadomienia aktywne 🔔")
+  } catch (err) {
+    console.error("enablePush error:", err)
+    alert("Błąd Push ON: " + String(err))
+  }
   }
 
   const received = tasks.filter(
