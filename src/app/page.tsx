@@ -331,10 +331,20 @@ export default function Home() {
       return
     }
 
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    })
+    let subscription
+
+try {
+  subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
+  })
+
+  alert("Subskrypcja utworzona")
+} catch (err) {
+  alert("Błąd subscribe: " + String(err))
+  console.error(err)
+  return
+   }
 
     console.log("subscription:", subscription)
 
