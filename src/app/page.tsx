@@ -26,7 +26,7 @@ type Task = {
   id: number
   title: string
   authorId: string
-  assigneeId: string
+  assigneeId: string | null
   departmentId: number
   done: boolean
   completedAt: string | null
@@ -176,87 +176,85 @@ export default function Home() {
     setProfile(null)
   }
 
- const addTask = async () => {
-  if (!newTask.trim() || !profile) return
+  const addTask = async () => {
+    if (!newTask.trim() || !profile) return
 
-  const { data: candidates, error: candidatesError } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("department_id", selectedDepartment)
+    const { data: candidates, error: candidatesError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("department_id", selectedDepartment)
 
-  console.log("candidates:", candidates)
-  console.log("candidatesError:", candidatesError)
+    console.log("candidates:", candidates)
+    console.log("candidatesError:", candidatesError)
 
-  if (candidatesError) {
-    alert("Błąd pobierania pracowników: " + candidatesError.message)
-    return
-  }
+    if (candidatesError) {
+      alert("Błąd pobierania pracowników: " + candidatesError.message)
+      return
+    }
 
-  const targets = candidates || []
-
-  console.log("targets:", targets)
-
-  if (targets.length === 0) {
-    alert("Brak pracowników w tym dziale.")
-    return
-  }
-
-  const rows = targets.map((target: Profile) => ({
-    title: newTask,
-    authorId: profile.id,
-    assigneeId: target.id,
-    departmentId: selectedDepartment,
-    done: false,
-    archivedBy: [],
-    createdAt: new Date().toISOString(),
-    completedAt: null,
-  }))
-
-  console.log("rows:", rows)
-
-  const { data, error } = await supabase
-    .from("tasks")
-    .insert(rows)
-    .select()
-
-  console.log("insert data:", data)
-  console.log("insert error:", error)
-
-  if (error) {
-    alert("Błąd zapisu taska: " + error.message)
-    return
-  }
-
-  const activeTargets = targets.filter(
-    (target: Profile) => target.status === "na stanowisku"
-  )
-
-  for (const target of activeTargets) {
-    const res = await fetch(
-      "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: target.id,
-          title: "Nowe zadanie",
-          body: newTask,
-        }),
-      }
+    const targets = (candidates || []).filter(
+      (p: Profile) => p.status === "na stanowisku"
     )
 
-    console.log("push response status:", res.status)
+    console.log("targets:", targets)
 
-    const responseText = await res.text()
+    if (targets.length === 0) {
+      alert("Brak pracowników na stanowisku w tym dziale.")
+      return
+    }
 
-    console.log("push response body:", responseText)
+    const rows = targets.map((target: Profile) => ({
+      title: newTask,
+      authorId: profile.id,
+      assigneeId: null,
+      departmentId: selectedDepartment,
+      done: false,
+      archivedBy: [],
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    }))
+
+    console.log("rows:", rows)
+
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert(rows)
+      .select()
+
+    console.log("insert data:", data)
+    console.log("insert error:", error)
+
+    if (error) {
+      alert("Błąd zapisu taska: " + error.message)
+      return
+    }
+
+    for (const target of targets) {
+      const res = await fetch(
+        "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: target.id,
+            title: "Nowe zadanie",
+            body: newTask,
+          }),
+        }
+      )
+
+      console.log("push response status:", res.status)
+
+      const responseText = await res.text()
+
+      console.log("push response body:", responseText)
+    }
+
+    setNewTask("")
+    setShowForm(false)
   }
-
-  setNewTask("")
-  setShowForm(false)
-}
 
   const markDone = async (id: number) => {
     await supabase
@@ -378,7 +376,9 @@ try {
 
   const received = tasks.filter(
     (t) =>
-      t.assigneeId === profile?.id &&
+      t.departmentId === profile?.department_id &&
+      t.authorId !==profile?.id &&
+      profile?.status === "na stanowisku" &&
       !t.archivedBy?.includes(profile.id)
   )
 
@@ -390,7 +390,8 @@ try {
 
   const archivedReceived = tasks.filter(
     (t) =>
-      t.assigneeId === profile?.id &&
+      t.departmentId === profile?.department_id &&
+      t.authorId !== profile?.id &&
       t.archivedBy?.includes(profile.id)
   )
 
