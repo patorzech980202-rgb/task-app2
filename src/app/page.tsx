@@ -468,7 +468,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f5f0e6] flex items-center justify-center p-6 text-stone-800">
+      <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-blue-200 flex items-center justify-center p-6">
         Ładowanie...
       </div>
     )
