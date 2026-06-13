@@ -199,20 +199,20 @@ export default function Home() {
     console.log("targets:", targets)
 
     if (targets.length === 0) {
-      alert("Brak pracowników na stanowisku w tym dziale.")
-      return
+    console.log("Brak pracowników w tym dziale, ale task zostanie zapisany jako działowy.")
     }
-
-    const rows = targets.map((target: Profile) => ({
-      title: newTask,
-      authorId: profile.id,
-      assigneeId: null,
-      departmentId: selectedDepartment,
-      done: false,
-      archivedBy: [],
-      createdAt: new Date().toISOString(),
-      completedAt: null,
-    }))
+    const rows = [
+    {
+    title: newTask,
+    authorId: profile.id,
+    assigneeId: null,
+    departmentId: selectedDepartment,
+    done: false,
+    archivedBy: [],
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+    },
+    ]
 
     console.log("rows:", rows)
 
