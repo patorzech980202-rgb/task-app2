@@ -1,18 +1,12 @@
 "use client"
 
-
 import { useEffect, useState } from "react"
 import { supabase } from "../../lib/supabase"
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
-
-  const base64 = (base64String + padding)
-    .replace(/-/g, "+")
-    .replace(/_/g, "/")
-
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
   const rawData = window.atob(base64)
-
   const outputArray = new Uint8Array(rawData.length)
 
   for (let i = 0; i < rawData.length; ++i) {
@@ -199,27 +193,25 @@ export default function Home() {
     console.log("targets:", targets)
 
     if (targets.length === 0) {
-    console.log("Brak pracowników w tym dziale, ale task zostanie zapisany jako działowy.")
+      console.log("Brak pracowników w tym dziale, ale task zostanie zapisany jako działowy.")
     }
+
     const rows = [
-    {
-    title: newTask,
-    authorId: profile.id,
-    assigneeId: null,
-    departmentId: selectedDepartment,
-    done: false,
-    archivedBy: [],
-    createdAt: new Date().toISOString(),
-    completedAt: null,
-    },
+      {
+        title: newTask,
+        authorId: profile.id,
+        assigneeId: null,
+        departmentId: selectedDepartment,
+        done: false,
+        archivedBy: [],
+        createdAt: new Date().toISOString(),
+        completedAt: null,
+      },
     ]
 
     console.log("rows:", rows)
 
-    const { data, error } = await supabase
-      .from("tasks")
-      .insert(rows)
-      .select()
+    const { data, error } = await supabase.from("tasks").insert(rows).select()
 
     console.log("insert data:", data)
     console.log("insert error:", error)
@@ -294,90 +286,90 @@ export default function Home() {
     setProfile({ ...profile, status: newStatus })
   }
 
- const enablePush = async () => {
-  try {
-    if (!("serviceWorker" in navigator)) {
-      alert("Ta przeglądarka nie obsługuje Service Workera")
-      return
+  const enablePush = async () => {
+    try {
+      if (!("serviceWorker" in navigator)) {
+        alert("Ta przeglądarka nie obsługuje Service Workera")
+        return
+      }
+
+      if (!("PushManager" in window)) {
+        alert("Ta przeglądarka nie obsługuje powiadomień push")
+        return
+      }
+
+      const permission = await Notification.requestPermission()
+
+      if (permission !== "granted") {
+        alert("Brak zgody na powiadomienia")
+        return
+      }
+
+      const registration = await navigator.serviceWorker.register("/sw.js")
+      await navigator.serviceWorker.ready
+
+      const oldSubscription = await registration.pushManager.getSubscription()
+
+      if (oldSubscription) {
+        await oldSubscription.unsubscribe()
+      }
+
+      const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+
+      console.log("FRONT vapid public length:", publicKey?.length)
+      console.log("FRONT vapid public first chars:", publicKey?.slice(0, 12))
+
+      if (!publicKey) {
+        alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
+        return
+      }
+
+      let subscription
+
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        })
+
+        alert("Subskrypcja utworzona")
+      } catch (err) {
+        alert("Błąd subscribe: " + String(err))
+        console.error(err)
+        return
+      }
+
+      console.log("subscription:", subscription)
+
+      const { data: auth } = await supabase.auth.getUser()
+
+      if (!auth.user) {
+        alert("Musisz być zalogowany")
+        return
+      }
+
+      const { error } = await supabase.from("push_subscriptions").insert({
+        user_id: auth.user.id,
+        subscription: JSON.parse(JSON.stringify(subscription)),
+      })
+
+      if (error) {
+        console.error("push subscription insert error:", error)
+        alert("Nie udało się zapisać subskrypcji: " + error.message)
+        return
+      }
+
+      alert("Powiadomienia aktywne 🔔")
+    } catch (err) {
+      console.error("enablePush error:", err)
+      alert("Błąd Push ON: " + String(err))
     }
-
-    if (!("PushManager" in window)) {
-      alert("Ta przeglądarka nie obsługuje powiadomień push")
-      return
-    }
-
-    const permission = await Notification.requestPermission()
-
-    if (permission !== "granted") {
-      alert("Brak zgody na powiadomienia")
-      return
-    }
-
-    const registration = await navigator.serviceWorker.register("/sw.js")
-    await navigator.serviceWorker.ready
-
-    const oldSubscription = await registration.pushManager.getSubscription()
-
-    if (oldSubscription) {
-      await oldSubscription.unsubscribe()
-    }
-
-    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-
-    console.log("FRONT vapid public length:", publicKey?.length)
-    console.log("FRONT vapid public first chars:", publicKey?.slice(0, 12))
-
-    if (!publicKey) {
-      alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
-      return
-    }
-
-    let subscription
-
-try {
-  subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey),
-  })
-
-  alert("Subskrypcja utworzona")
-} catch (err) {
-  alert("Błąd subscribe: " + String(err))
-  console.error(err)
-  return
-   }
-
-    console.log("subscription:", subscription)
-
-    const { data: auth } = await supabase.auth.getUser()
-
-    if (!auth.user) {
-      alert("Musisz być zalogowany")
-      return
-    }
-
-    const { error } = await supabase.from("push_subscriptions").insert({
-      user_id: auth.user.id,
-      subscription: JSON.parse(JSON.stringify(subscription)),
-    })
-
-    if (error) {
-      console.error("push subscription insert error:", error)
-      alert("Nie udało się zapisać subskrypcji: " + error.message)
-      return
-    }
-
-    alert("Powiadomienia aktywne 🔔")
-  } catch (err) {
-    console.error("enablePush error:", err)
-    alert("Błąd Push ON: " + String(err))
-  }
   }
 
   const received = tasks.filter(
     (t) =>
       t.departmentId === profile?.department_id &&
-      t.authorId !==profile?.id &&
+      t.authorId !== profile?.id &&
       profile?.status === "na stanowisku" &&
       !t.archivedBy?.includes(profile.id)
   )
@@ -405,132 +397,197 @@ try {
     if (!count) return null
 
     return (
-      <span className="ml-2 w-5 h-5 bg-red-500 rounded-full text-black text-xs flex items-center justify-center">
+      <span className="ml-2 inline-flex min-w-6 h-6 items-center justify-center rounded-full bg-red-500 px-2 text-xs font-bold text-white shadow-sm">
         {count}
       </span>
     )
   }
 
-  const renderTasks = (list: Task[], mode: string) =>
-    list.map((t) => (
+  const renderTasks = (list: Task[], mode: string) => {
+    if (list.length === 0) {
+      return (
+        <div className="mb-3 rounded-2xl border border-dashed border-stone-300 bg-white/60 p-4 text-center text-sm text-stone-500">
+          Brak zadań w tej sekcji
+        </div>
+      )
+    }
+
+    return list.map((t) => (
       <div
         key={t.id}
-        className="flex justify-between p-3 bg-white border rounded-xl mb-2"
+        className="mb-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
       >
-        <span className="text-black">{t.title}</span>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="break-words text-sm font-semibold text-stone-900">
+              {t.title}
+            </p>
 
-        {mode === "archived" ? (
-          <span>📦</span>
-        ) : (
-          <div className="flex gap-2 items-center">
-            {!t.done ? (
-              <button
-                onClick={() => markDone(t.id)}
-                className="text-xs border px-2 py-1 rounded text-black"
-              >
-                Zrobione
-              </button>
-            ) : (
-              <button
-                onClick={() => archiveTask(t.id)}
-                className="text-xs text-blue-600 border px-2 py-1 rounded"
-              >
-                Archiwizuj
-              </button>
-            )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {t.done ? (
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  ✔ Wykonane
+                </span>
+              ) : (
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                  W trakcie
+                </span>
+              )}
+
+              {mode === "archived" && (
+                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-semibold text-stone-600">
+                  📦 Archiwum
+                </span>
+              )}
+            </div>
           </div>
-        )}
+
+          {mode !== "archived" && (
+            <div className="shrink-0">
+              {!t.done ? (
+                <button
+                  onClick={() => markDone(t.id)}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-900 shadow-sm"
+                >
+                  Zrobione
+                </button>
+              ) : (
+                <button
+                  onClick={() => archiveTask(t.id)}
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm"
+                >
+                  Archiwizuj
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     ))
+  }
 
-  if (loading) return <div className="p-6">Ładowanie...</div>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f5f0e6] flex items-center justify-center p-6 text-stone-800">
+        Ładowanie...
+      </div>
+    )
+  }
 
   if (!profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f5f0e6]">
-        <div className="bg-white p-6 rounded-xl w-80 space-y-3">
-          <h1 className="text-black font-bold text-xl">Logowanie</h1>
+      <div className="min-h-screen bg-[#f5f0e6] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl border border-stone-200">
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-900 text-xl text-white">
+              ✓
+            </div>
+            <h1 className="text-2xl font-bold text-stone-900">Task Hotel</h1>
+            <p className="mt-1 text-sm text-stone-500">
+              Zaloguj się do panelu zadań
+            </p>
+          </div>
 
-          <input
-            className="w-full border p-2 text-black"
-            placeholder="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
+          <div className="space-y-3">
+            <input
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
 
-          <input
-            className="w-full border p-2 text-black"
-            placeholder="hasło"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+            <input
+              className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+              placeholder="Hasło"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
 
-          <button
-            onClick={signIn}
-            className="w-full bg-black text-white py-2 rounded"
-          >
-            Zaloguj
-          </button>
+            <button
+              onClick={signIn}
+              className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
+            >
+              Zaloguj
+            </button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f0e6] flex justify-center p-6">
-      <div className="w-full max-w-xl">
-        <div className="text-center mb-4">
-          <h1 className="text-2xl font-bold text-black">
-            Cześć, {profile.name}
-          </h1>
+    <div className="min-h-screen bg-[#f5f0e6] p-4">
+      <div className="mx-auto w-full max-w-xl">
+        <div className="mb-4 rounded-3xl bg-stone-900 p-5 text-white shadow-xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-stone-300">
+                Panel zadań
+              </p>
+              <h1 className="mt-1 text-2xl font-bold">
+                Cześć, {profile.name}
+              </h1>
+            </div>
 
-          <p className="text-black">{profile.status}</p>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-bold ${
+                profile.status === "na stanowisku"
+                  ? "bg-emerald-400 text-emerald-950"
+                  : "bg-red-400 text-red-950"
+              }`}
+            >
+              {profile.status === "na stanowisku"
+                ? "Na stanowisku"
+                : "Poza stanowiskiem"}
+            </span>
+          </div>
 
-          <button
-            onClick={toggleStatus}
-            className="border px-3 py-1 bg-white text-black rounded mt-2"
-          >
-            Zmień status
-          </button>
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <button
+              onClick={toggleStatus}
+              className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+            >
+              Status
+            </button>
 
-          <button
-            onClick={signOut}
-            className="ml-2 border px-3 py-1 bg-white text-black rounded"
-          >
-            Wyloguj
-          </button>
+            <button
+              onClick={enablePush}
+              className="rounded-2xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-white"
+            >
+              🔔 Push
+            </button>
 
-          <button
-            onClick={enablePush}
-            className="ml-2 border px-3 py-1 bg-green-500 text-white rounded"
-          >
-            🔔 Push ON
-          </button>
+            <button
+              onClick={signOut}
+              className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-stone-900"
+            >
+              Wyloguj
+            </button>
+          </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl mb-4">
+        <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
           <button
             onClick={() => setShowForm(!showForm)}
-            className="w-full bg-black text-white py-2 rounded"
+            className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
           >
-            + Dodaj task
+            {showForm ? "Zamknij formularz" : "+ Nowe zadanie"}
           </button>
 
           {showForm && (
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-3">
               <input
-                className="w-full border p-2 text-black"
+                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                placeholder="Treść zadania"
                 value={newTask}
                 onChange={(e) => setNewTask(e.target.value)}
               />
 
               <select
-                className="w-full border p-2 text-black"
+                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                 value={selectedDepartment}
-                onChange={(e) =>
-                  setSelectedDepartment(Number(e.target.value))
-                }
+                onChange={(e) => setSelectedDepartment(Number(e.target.value))}
               >
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -541,9 +598,9 @@ try {
 
               <button
                 onClick={addTask}
-                className="w-full bg-black text-white py-2 rounded"
+                className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
               >
-                Dodaj
+                Wyślij zadanie
               </button>
             </div>
           )}
@@ -551,30 +608,39 @@ try {
 
         <button
           onClick={() => toggleSection("otrzymane")}
-          className="w-full bg-white border p-2 rounded mb-2 text-black"
+          className="mb-2 flex w-full items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 text-left font-bold text-stone-900 shadow-sm"
         >
-          Otrzymane <Badge count={received.length} />
+          <span>📥 Otrzymane</span>
+          <Badge count={received.length} />
         </button>
         {openSections.otrzymane && renderTasks(received, "received")}
 
         <button
           onClick={() => toggleSection("wysłane")}
-          className="w-full bg-white border p-2 rounded mb-2 text-black"
+          className="mb-2 mt-3 flex w-full items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 text-left font-bold text-stone-900 shadow-sm"
         >
-          Wysłane <Badge count={sent.length} />
+          <span>📤 Wysłane</span>
+          <Badge count={sent.length} />
         </button>
         {openSections.wysłane && renderTasks(sent, "sent")}
 
         <button
           onClick={() => toggleSection("archiwum")}
-          className="w-full bg-white border p-2 rounded mb-2 text-black"
+          className="mb-2 mt-3 flex w-full items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 text-left font-bold text-stone-900 shadow-sm"
         >
-          Archiwum
+          <span>📦 Archiwum</span>
         </button>
 
         {openSections.archiwum && (
           <>
+            <div className="mb-2 mt-3 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+              Otrzymane
+            </div>
             {renderTasks(archivedReceived, "archived")}
+
+            <div className="mb-2 mt-4 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+              Wysłane
+            </div>
             {renderTasks(archivedSent, "archived")}
           </>
         )}
