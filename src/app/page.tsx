@@ -517,7 +517,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f0e6] p-4">
+    <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-blue-200 p-4">
       <div className="mx-auto w-full max-w-xl">
         <div className="mb-4 rounded-3xl bg-stone-900 p-5 text-white shadow-xl">
           <div className="flex items-start justify-between gap-3">
