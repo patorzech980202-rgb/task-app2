@@ -476,7 +476,7 @@ export default function Home() {
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-[#f5f0e6] flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
         <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl border border-stone-200">
           <div className="mb-6 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-stone-900 text-xl text-white">
