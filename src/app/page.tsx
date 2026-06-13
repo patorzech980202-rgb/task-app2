@@ -442,37 +442,40 @@ export default function Home() {
             </div>
           </div>
 
-          {mode === "received" && (
-  <div className="shrink-0">
-    {!t.done ? (
-      <button
-        onClick={() => markDone(t.id)}
-        className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-900 shadow-sm"
-      >
-        Zrobione
-      </button>
-    ) : (
-      <button
-        onClick={() => archiveTask(t.id)}
-        className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm"
-      >
-        Archiwizuj
-      </button>
-    )}
-  </div>
-)}
+                   {mode === "received" && (
+            <div className="shrink-0">
+              {!t.done ? (
+                <button
+                  onClick={() => markDone(t.id)}
+                  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-900 shadow-sm"
+                >
+                  Zrobione
+                </button>
+              ) : (
+                <button
+                  onClick={() => archiveTask(t.id)}
+                  className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm"
+                >
+                  Archiwizuj
+                </button>
+              )}
+            </div>
+          )}
 
-{mode === "sent" && t.done && (
-  <div className="shrink-0">
-    <button
-      onClick={() => archiveTask(t.id)}
-      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm"
-    >
-      Archiwizuj
-    </button>
-  </div>
-)}
-
+          {mode === "sent" && t.done && (
+            <div className="shrink-0">
+              <button
+                onClick={() => archiveTask(t.id)}
+                className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm"
+              >
+                Archiwizuj
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    ))
+  }
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-blue-200 flex items-center justify-center p-6">
