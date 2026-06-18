@@ -37,9 +37,9 @@ type Profile = {
   surname?: string
   department_id: number
   status: Status
+  role: "pracownik" | "kierownik" | "administrator"
   push_token?: string | null
 }
-
 type SectionKey = "otrzymane" | "wysłane" | "archiwum"
 
 export default function Home() {
