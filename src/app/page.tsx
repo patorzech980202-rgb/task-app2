@@ -46,6 +46,7 @@ type SectionKey = "otrzymane" | "wysłane" | "archiwum"
 
 export default function Home() {
   const [selectedDepartment, setSelectedDepartment] = useState(1)
+  const [selectedHotel, setSelectedHotel] = useState(1)
   const [showForm, setShowForm] = useState(false)
 
   const [openSections, setOpenSections] = useState({
@@ -66,7 +67,12 @@ export default function Home() {
     { id: 2, name: "KONSERWATORZY" },
     { id: 3, name: "RECEPCJA" },
   ]
-
+const hotels = [
+  { id: 1, name: "Olimp 1" },
+  { id: 2, name: "Olimp 2" },
+  { id: 3, name: "Olimp 3" },
+  { id: 4, name: "Olimp 4" },
+]
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [newTask, setNewTask] = useState("")
@@ -629,7 +635,19 @@ const received = tasks.filter((t) => {
                 value={newTask}
                 onChange={(e) => setNewTask(e.target.value)}
               />
-
+              {(isManager || isAdmin) && (
+                <select
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                  value={selectedHotel}
+                  onChange={(e) => setSelectedHotel(Number(e.target.value))}
+                >
+                  {hotels.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <select
                 className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                 value={selectedDepartment}
