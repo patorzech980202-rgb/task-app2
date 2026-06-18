@@ -23,6 +23,7 @@ type Task = {
   assigneeId: string | null
   departmentId: number
   done: boolean
+  completedBy: string | null
   completedAt: string | null
   createdAt: string
   archivedBy: string[]
@@ -197,16 +198,17 @@ export default function Home() {
     }
 
     const rows = [
-      {
-        title: newTask,
-        authorId: profile.id,
-        assigneeId: null,
-        departmentId: selectedDepartment,
-        done: false,
-        archivedBy: [],
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-      },
+  {
+    title: newTask,
+    authorId: profile.id,
+    assigneeId: null,
+    departmentId: selectedDepartment,
+    done: false,
+    completedBy: null,
+    archivedBy: [],
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+    },
     ]
 
     console.log("rows:", rows)
@@ -249,13 +251,16 @@ export default function Home() {
   }
 
   const markDone = async (id: number) => {
-    await supabase
-      .from("tasks")
-      .update({
-        done: true,
-        completedAt: new Date().toISOString(),
-      })
-      .eq("id", id)
+  if (!profile) return
+
+  await supabase
+    .from("tasks")
+    .update({
+      done: true,
+      completedBy: profile.id,
+      completedAt: new Date().toISOString(),
+    })
+    .eq("id", id)
   }
 
   const archiveTask = async (id: number) => {
@@ -367,11 +372,12 @@ export default function Home() {
   }
 
   const received = tasks.filter(
-    (t) =>
-      t.departmentId === profile?.department_id &&
-      t.authorId !== profile?.id &&
-      profile?.status === "na stanowisku" &&
-      !t.archivedBy?.includes(profile.id)
+  (t) =>
+    t.departmentId === profile?.department_id &&
+    t.authorId !== profile?.id &&
+    profile?.status === "na stanowisku" &&
+    !t.done &&
+    !t.archivedBy?.includes(profile.id)
   )
 
   const sent = tasks.filter(
