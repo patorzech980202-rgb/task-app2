@@ -371,14 +371,16 @@ export default function Home() {
     }
   }
 
-  const received = tasks.filter(
+  const isBoss =
+  profile?.role === "kierownik" || profile?.role === "administrator"
+
+const received = tasks.filter(
   (t) =>
     t.departmentId === profile?.department_id &&
     t.authorId !== profile?.id &&
-    profile?.status === "na stanowisku" &&
-    !t.done &&
+    (profile?.status === "na stanowisku" || isBoss) &&
     !t.archivedBy?.includes(profile.id)
-  )
+)
 
   const sent = tasks.filter(
     (t) =>
@@ -543,6 +545,9 @@ export default function Home() {
               </p>
               <h1 className="mt-1 text-2xl font-bold">
                 Cześć, {profile.name}
+                <p className="text-sm text-stone-300 mt-1">
+  Rola: {profile.role}
+</p>
               </h1>
             </div>
 
