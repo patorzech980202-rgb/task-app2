@@ -22,6 +22,7 @@ type Task = {
   authorId: string
   assigneeId: string | null
   departmentId: number
+  hotel_id: number | null
   done: boolean
   completedBy: string | null
   completedAt: string | null
@@ -36,6 +37,7 @@ type Profile = {
   name: string
   surname?: string
   department_id: number
+  hotel_id: number
   status: Status
   role: "pracownik" | "kierownik" | "administrator"
   push_token?: string | null
@@ -197,19 +199,20 @@ export default function Home() {
       console.log("Brak pracowników w tym dziale, ale task zostanie zapisany jako działowy.")
     }
 
-    const rows = [
+  const rows = [
   {
     title: newTask,
     authorId: profile.id,
     assigneeId: null,
     departmentId: selectedDepartment,
+    hotel_id: profile.hotel_id,
     done: false,
     completedBy: null,
     archivedBy: [],
     createdAt: new Date().toISOString(),
     completedAt: null,
-    },
-    ]
+  },
+]
 
     console.log("rows:", rows)
 
@@ -373,14 +376,36 @@ export default function Home() {
 
   const isBoss =
   profile?.role === "kierownik" || profile?.role === "administrator"
+const isManager = profile?.role === "kierownik"
+const isAdmin = profile?.role === "administrator"
+const received = tasks.filter((t) => {
+  if (!profile) return false
 
-const received = tasks.filter(
-  (t) =>
-    t.departmentId === profile?.department_id &&
-    t.authorId !== profile?.id &&
-    (profile?.status === "na stanowisku" || isBoss) &&
-    !t.archivedBy?.includes(profile.id)
-)
+  const notArchived = !t.archivedBy?.includes(profile.id)
+  const notAuthor = t.authorId !== profile.id
+
+  if (isAdmin) {
+    return notAuthor && notArchived && profile.status === "na stanowisku" && !t.done
+  }
+
+  if (isManager) {
+    return (
+      t.departmentId === profile.department_id &&
+      notAuthor &&
+      notArchived &&
+      !t.done
+    )
+  }
+
+  return (
+    t.hotel_id === profile.hotel_id &&
+    t.departmentId === profile.department_id &&
+    notAuthor &&
+    profile.status === "na stanowisku" &&
+    notArchived &&
+    !t.done
+  )
+})
 
   const sent = tasks.filter(
     (t) =>
