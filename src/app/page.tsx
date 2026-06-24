@@ -544,7 +544,14 @@ const received = tasks.filter((t) => {
     👤 Wykonał: {getProfileName(t.completedBy)}
     {t.completedAt && (
       <span>
-        {" "}• {new Date(t.completedAt).toLocaleString("pl-PL")}
+        {new Date(t.completedAt).toLocaleString("pl-PL", {
+  timeZone: "Europe/Warsaw",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+})}
       </span>
     )}
   </div>
