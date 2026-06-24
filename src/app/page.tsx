@@ -47,6 +47,7 @@ type SectionKey = "otrzymane" | "wysłane" | "archiwum"
 export default function Home() {
   const [selectedDepartment, setSelectedDepartment] = useState(1)
   const [selectedHotel, setSelectedHotel] = useState(1)
+  const [filterHotel, setFilterHotel] = useState(0)
   const [showForm, setShowForm] = useState(false)
 
   const [openSections, setOpenSections] = useState({
@@ -405,16 +406,23 @@ const received = tasks.filter((t) => {
   const notAuthor = t.authorId !== profile.id
 
   if (isAdmin) {
-    return notAuthor && notArchived && profile.status === "na stanowisku" && !t.done
+   return (
+  notAuthor &&
+  notArchived &&
+  profile.status === "na stanowisku" &&
+  !t.done &&
+  (filterHotel === 0 || t.hotel_id === filterHotel)
+)
   }
 
   if (isManager) {
-    return (
-      t.departmentId === profile.department_id &&
-      notAuthor &&
-      notArchived &&
-      !t.done
-    )
+  return (
+  t.departmentId === profile.department_id &&
+  (filterHotel === 0 || t.hotel_id === filterHotel) &&
+  notAuthor &&
+  notArchived &&
+  !t.done
+)
   }
 
   return (
@@ -695,7 +703,26 @@ const received = tasks.filter((t) => {
             </button>
           </div>
         </div>
+{(isManager || isAdmin) && (
+  <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+      Filtr hotelu
+    </label>
 
+    <select
+      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+      value={filterHotel}
+      onChange={(e) => setFilterHotel(Number(e.target.value))}
+    >
+      <option value={0}>Wszystkie hotele</option>
+      {hotels.map((h) => (
+        <option key={h.id} value={h.id}>
+          {h.name}
+        </option>
+      ))}
+    </select>
+  </div>
+)}
         <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
           <button
             onClick={() => setShowForm(!showForm)}
