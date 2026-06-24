@@ -211,7 +211,7 @@ const hotels = [
     authorId: profile.id,
     assigneeId: null,
     departmentId: selectedDepartment,
-    hotel_id: profile.hotel_id,
+    hotel_id: isManager || isAdmin ? selectedHotel : profile.hotel_id,
     done: false,
     completedBy: null,
     archivedBy: [],
