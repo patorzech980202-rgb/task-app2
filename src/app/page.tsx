@@ -90,6 +90,7 @@ const getProfileName = (profileId: string | null) => {
   const [tasks, setTasks] = useState<Task[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [newTask, setNewTask] = useState("")
+  const [selectedImages, setSelectedImages] = useState<File[]>([])
   const [loading, setLoading] = useState(true)
 
   const [email, setEmail] = useState("")
@@ -752,6 +753,21 @@ const received = tasks.filter((t) => {
                   ))}
                 </select>
               )}
+                  <input
+                  type="file"
+                 accept="image/*"
+                  multiple
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                  onChange={(e) => {
+                  const files = Array.from(e.target.files || [])
+                 setSelectedImages(files)
+                  }}
+                  />
+                  {selectedImages.length > 0 && (
+  <p className="text-xs text-stone-500">
+    Wybrano zdjęć: {selectedImages.length}
+  </p>
+)}
               <select
                 className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                 value={selectedDepartment}
