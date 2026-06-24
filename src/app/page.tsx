@@ -247,7 +247,34 @@ const getProfileName = (profileId: string | null) => {
       alert("Błąd zapisu taska: " + error.message)
       return
     }
+const createdTask = data?.[0]
 
+if (createdTask && selectedImages.length > 0) {
+  for (const image of selectedImages) {
+    const fileExt = image.name.split(".").pop()
+    const fileName = `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`
+    const filePath = `tasks/${createdTask.id}/${fileName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from("task-images")
+      .upload(filePath, image)
+
+    if (uploadError) {
+      console.error("uploadError:", uploadError)
+      alert("Nie udało się wysłać zdjęcia: " + uploadError.message)
+      continue
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("task-images")
+      .getPublicUrl(filePath)
+
+    await supabase.from("task_images").insert({
+      task_id: createdTask.id,
+      image_url: publicUrlData.publicUrl,
+    })
+  }
+}
     for (const target of targets) {
       const res = await fetch(
         "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
@@ -272,6 +299,7 @@ const getProfileName = (profileId: string | null) => {
     }
 
     setNewTask("")
+    setSelectedImages([])
     setShowForm(false)
   }
 
