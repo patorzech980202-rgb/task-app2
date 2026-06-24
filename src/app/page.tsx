@@ -73,6 +73,9 @@ const hotels = [
   { id: 3, name: "Olimp 3" },
   { id: 4, name: "Olimp 4" },
 ]
+const getHotelName = (hotelId: number | null) => {
+  return hotels.find((h) => h.id === hotelId)?.name || "Brak hotelu"
+}
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [newTask, setNewTask] = useState("")
@@ -413,24 +416,68 @@ const received = tasks.filter((t) => {
   )
 })
 
-  const sent = tasks.filter(
-    (t) =>
-      t.authorId === profile?.id &&
-      !t.archivedBy?.includes(profile.id)
-  )
+  const sent = tasks.filter((t) => {
+  if (!profile) return false
 
-  const archivedReceived = tasks.filter(
-    (t) =>
-      t.departmentId === profile?.department_id &&
-      t.authorId !== profile?.id &&
-      t.archivedBy?.includes(profile.id)
-  )
+  const notArchived = !t.archivedBy?.includes(profile.id)
 
-  const archivedSent = tasks.filter(
-    (t) =>
-      t.authorId === profile?.id &&
-      t.archivedBy?.includes(profile.id)
+  if (isAdmin) {
+    return notArchived
+  }
+
+  if (isManager) {
+    return (
+      t.departmentId === profile.department_id &&
+      notArchived
+    )
+  }
+
+  return (
+    t.authorId === profile.id &&
+    notArchived
   )
+})
+
+ const archivedReceived = tasks.filter((t) => {
+  if (!profile) return false
+
+  if (isAdmin) {
+    return t.done
+  }
+
+  if (isManager) {
+    return (
+      t.departmentId === profile.department_id &&
+      t.done
+    )
+  }
+
+  return (
+    t.hotel_id === profile.hotel_id &&
+    t.departmentId === profile.department_id &&
+    t.archivedBy?.includes(profile.id)
+  )
+})
+
+  const archivedSent = tasks.filter((t) => {
+  if (!profile) return false
+
+  if (isAdmin) {
+    return t.done
+  }
+
+  if (isManager) {
+    return (
+      t.departmentId === profile.department_id &&
+      t.done
+    )
+  }
+
+  return (
+    t.authorId === profile.id &&
+    t.archivedBy?.includes(profile.id)
+  )
+})
 
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null
@@ -461,7 +508,9 @@ const received = tasks.filter((t) => {
             <p className="break-words text-sm font-semibold text-stone-900">
               {t.title}
             </p>
-
+            <p className="mt-1 text-xs font-medium text-blue-700">
+            🏨 {getHotelName(t.hotel_id)}
+            </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {t.done ? (
                 <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
