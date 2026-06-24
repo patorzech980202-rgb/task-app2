@@ -76,8 +76,18 @@ const hotels = [
 const getHotelName = (hotelId: number | null) => {
   return hotels.find((h) => h.id === hotelId)?.name || "Brak hotelu"
 }
+const getProfileName = (profileId: string | null) => {
+  if (!profileId) return "Nieznany pracownik"
+
+  const user = profiles.find((p) => p.id === profileId)
+
+  if (!user) return "Nieznany pracownik"
+
+  return `${user.name}${user.surname ? " " + user.surname : ""}`
+}
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
   const [newTask, setNewTask] = useState("")
   const [loading, setLoading] = useState(true)
 
@@ -115,7 +125,8 @@ const getHotelName = (hotelId: number | null) => {
 
       const { data } = await supabase.from("tasks").select("*")
       setTasks(data || [])
-
+      const { data: allProfiles } = await supabase.from("profiles").select("*")
+      setProfiles(allProfiles || [])
       setLoading(false)
     }
 
@@ -528,6 +539,16 @@ const received = tasks.filter((t) => {
                 </span>
               )}
             </div>
+            {t.done && (
+  <div className="mt-2 text-xs text-stone-500">
+    👤 Wykonał: {getProfileName(t.completedBy)}
+    {t.completedAt && (
+      <span>
+        {" "}• {new Date(t.completedAt).toLocaleString("pl-PL")}
+      </span>
+    )}
+  </div>
+)}
           </div>
 
                    {mode === "received" && (
