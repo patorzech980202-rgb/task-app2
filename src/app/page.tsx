@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { supabase } from "../../lib/supabase"
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -101,6 +101,9 @@ const getTaskImages = (taskId: number) => {
   const [newTask, setNewTask] = useState("")
   const [selectedImages, setSelectedImages] = useState<File[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const touchStartX = useRef<number | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [email, setEmail] = useState("")
@@ -596,7 +599,12 @@ const received = tasks.filter((t) => {
       <button
   key={img.id}
   type="button"
-  onClick={() => setPreviewImage(img.image_url)}
+ onClick={() => {
+  const images = getTaskImages(t.id).map((item) => item.image_url)
+  setPreviewImages(images)
+  setPreviewIndex(images.indexOf(img.image_url))
+  setPreviewImage(img.image_url)
+}}
   className="shrink-0"
 >
   <img
@@ -716,14 +724,83 @@ const received = tasks.filter((t) => {
       <div className="mx-auto w-full max-w-xl">
       {previewImage && (
   <div
-    onClick={() => setPreviewImage(null)}
-    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-  >
-    <img
-      src={previewImage}
-      alt="Podgląd zdjęcia"
-      className="max-h-[90vh] max-w-full rounded-2xl object-contain"
-    />
+  className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
+  onTouchStart={(e) => {
+    touchStartX.current = e.touches[0].clientX
+  }}
+  onTouchEnd={(e) => {
+    if (touchStartX.current === null) return
+
+    const touchEndX = e.changedTouches[0].clientX
+    const diff = touchStartX.current - touchEndX
+
+    if (Math.abs(diff) > 50 && previewImages.length > 1) {
+      if (diff > 0) {
+        const newIndex =
+          previewIndex === previewImages.length - 1 ? 0 : previewIndex + 1
+
+        setPreviewIndex(newIndex)
+        setPreviewImage(previewImages[newIndex])
+      } else {
+        const newIndex =
+          previewIndex === 0 ? previewImages.length - 1 : previewIndex - 1
+
+        setPreviewIndex(newIndex)
+        setPreviewImage(previewImages[newIndex])
+      }
+    }
+
+    touchStartX.current = null
+  }}
+>
+    <button
+      onClick={() => {
+        setPreviewImage(null)
+        setPreviewImages([])
+        setPreviewIndex(0)
+      }}
+      className="absolute right-4 top-4 rounded-full bg-white px-4 py-2 text-sm font-bold text-black"
+    >
+      Zamknij
+    </button>
+
+    <div className="mb-3 text-sm font-semibold text-white">
+      Zdjęcie {previewIndex + 1} z {previewImages.length}
+    </div>
+
+    <div className="flex w-full items-center justify-center gap-3">
+      <button
+        onClick={() => {
+          const newIndex =
+            previewIndex === 0 ? previewImages.length - 1 : previewIndex - 1
+
+          setPreviewIndex(newIndex)
+          setPreviewImage(previewImages[newIndex])
+        }}
+        className="rounded-full bg-white/90 px-4 py-3 text-xl font-bold text-black"
+      >
+        ‹
+      </button>
+
+      <img
+        src={previewImage}
+        alt="Podgląd zdjęcia"
+        className="max-h-[80vh] max-w-[75vw] rounded-2xl object-contain"
+      />
+
+      <button
+        onClick={() => {
+          const newIndex =
+            previewIndex === previewImages.length - 1 ? 0 : previewIndex + 1
+
+          setPreviewIndex(newIndex)
+          setPreviewImage(previewImages[newIndex])
+        }}
+        className="rounded-full bg-white/90 px-4 py-3 text-xl font-bold text-black"
+      >
+        ›
+      </button>
+    </div>
   </div>
 )}
         <div className="mb-4 rounded-3xl bg-stone-900 p-5 text-white shadow-xl">
