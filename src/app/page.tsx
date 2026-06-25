@@ -33,6 +33,7 @@ type TaskImage = {
   id: number
   task_id: number
   image_url: string
+  file_path?: string | null
 }
 
 type Status = "na stanowisku" | "poza stanowiskiem"
@@ -94,9 +95,32 @@ const getProfileName = (profileId: string | null) => {
 const getTaskImages = (taskId: number) => {
   return taskImages.filter((img) => img.task_id === taskId)
 }
+const loadSignedImageUrls = async (images: TaskImage[]) => {
+  const urls: Record<number, string> = {}
+
+  for (const img of images) {
+    if (!img.file_path) {
+      urls[img.id] = img.image_url
+      continue
+    }
+
+    const { data, error } = await supabase.storage
+      .from("task-images")
+      .createSignedUrl(img.file_path, 3600)
+
+    if (!error && data?.signedUrl) {
+      urls[img.id] = data.signedUrl
+    } else {
+      urls[img.id] = img.image_url
+    }
+  }
+
+  setSignedImageUrls(urls)
+}
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [taskImages, setTaskImages] = useState<TaskImage[]>([])
+  const [signedImageUrls, setSignedImageUrls] = useState<Record<number, string>>({})
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [newTask, setNewTask] = useState("")
   const [selectedImages, setSelectedImages] = useState<File[]>([])
@@ -144,6 +168,7 @@ const getTaskImages = (taskId: number) => {
   .from("task_images")
   .select("*")
 setTaskImages(images || [])
+await loadSignedImageUrls(images || [])
       const { data: allProfiles } = await supabase.from("profiles").select("*")
       setProfiles(allProfiles || [])
       setLoading(false)
@@ -287,9 +312,10 @@ if (createdTask && selectedImages.length > 0) {
       .getPublicUrl(filePath)
 
     await supabase.from("task_images").insert({
-      task_id: createdTask.id,
-      image_url: publicUrlData.publicUrl,
-    })
+  task_id: createdTask.id,
+  image_url: publicUrlData.publicUrl,
+  file_path: filePath,
+})
   }
 }
     for (const target of targets) {
@@ -600,7 +626,9 @@ const received = tasks.filter((t) => {
   key={img.id}
   type="button"
  onClick={() => {
-  const images = getTaskImages(t.id).map((item) => item.image_url)
+  const images = getTaskImages(t.id).map(
+    (item) => signedImageUrls[item.id] || item.image_url
+  )
   setPreviewImages(images)
   setPreviewIndex(images.indexOf(img.image_url))
   setPreviewImage(img.image_url)
@@ -608,7 +636,7 @@ const received = tasks.filter((t) => {
   className="shrink-0"
 >
   <img
-    src={img.image_url}
+    src={signedImageUrls[img.id] || img.image_url}
     alt="Zdjęcie do zadania"
     className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
   />
