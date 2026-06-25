@@ -96,6 +96,28 @@ const getProfileName = (profileId: string | null) => {
 const getTaskImages = (taskId: number) => {
   return taskImages.filter((img) => img.task_id === taskId)
 }
+const loadSignedImageUrls = async (images: TaskImage[]) => {
+  const urls: Record<number, string> = {}
+
+  for (const img of images) {
+    if (!img.file_path) {
+      urls[img.id] = img.image_url
+      continue
+    }
+
+    const { data, error } = await supabase.storage
+      .from("task-images")
+      .createSignedUrl(img.file_path, 3600)
+
+    if (!error && data?.signedUrl) {
+      urls[img.id] = data.signedUrl
+    } else {
+      urls[img.id] = img.image_url
+    }
+  }
+
+  setSignedImageUrls(urls)
+}
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [taskImages, setTaskImages] = useState<TaskImage[]>([])
@@ -299,6 +321,13 @@ for (const file of selectedAttachments) {
   })
 }
 }
+const { data: refreshedImages } = await supabase
+  .from("task_images")
+  .select("*")
+
+setTaskImages(refreshedImages || [])
+await loadSignedImageUrls(refreshedImages || [])
+
     for (const target of targets) {
       const res = await fetch(
         "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
@@ -573,13 +602,13 @@ const renderTasks = (list: Task[], mode: string) => {
   return list.map((t) => {
     const attachments = getTaskImages(t.id)
 
-    const imagesOnly = attachments.filter((item) =>
-      item.file_type?.startsWith("image/")
-    )
+    const imagesOnly = attachments.filter(
+  (item) => !item.file_type || item.file_type.startsWith("image/")
+)
 
-    const videosOnly = attachments.filter((item) =>
-      item.file_type?.startsWith("video/")
-    )
+const videosOnly = attachments.filter((item) =>
+  item.file_type?.startsWith("video/")
+)
 
     const allImageUrls = imagesOnly.map(
       (item) => signedImageUrls[item.id] || item.image_url
