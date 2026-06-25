@@ -29,6 +29,11 @@ type Task = {
   createdAt: string
   archivedBy: string[]
 }
+type TaskImage = {
+  id: number
+  task_id: number
+  image_url: string
+}
 
 type Status = "na stanowisku" | "poza stanowiskiem"
 
@@ -86,8 +91,12 @@ const getProfileName = (profileId: string | null) => {
 
   return `${user.name}${user.surname ? " " + user.surname : ""}`
 }
+const getTaskImages = (taskId: number) => {
+  return taskImages.filter((img) => img.task_id === taskId)
+}
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [taskImages, setTaskImages] = useState<TaskImage[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [newTask, setNewTask] = useState("")
   const [selectedImages, setSelectedImages] = useState<File[]>([])
@@ -127,6 +136,10 @@ const getProfileName = (profileId: string | null) => {
 
       const { data } = await supabase.from("tasks").select("*")
       setTasks(data || [])
+      const { data: images } = await supabase
+  .from("task_images")
+  .select("*")
+setTaskImages(images || [])
       const { data: allProfiles } = await supabase.from("profiles").select("*")
       setProfiles(allProfiles || [])
       setLoading(false)
@@ -576,6 +589,25 @@ const received = tasks.filter((t) => {
                 </span>
               )}
             </div>
+            {getTaskImages(t.id).length > 0 && (
+  <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+    {getTaskImages(t.id).map((img) => (
+      <a
+        key={img.id}
+        href={img.image_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="shrink-0"
+      >
+        <img
+          src={img.image_url}
+          alt="Zdjęcie do zadania"
+          className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
+        />
+      </a>
+    ))}
+  </div>
+)}
             {t.done && (
   <div className="mt-2 text-xs text-stone-500">
     👤 Wykonał: {getProfileName(t.completedBy)}
