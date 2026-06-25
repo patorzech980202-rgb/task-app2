@@ -619,29 +619,41 @@ const received = tasks.filter((t) => {
                 </span>
               )}
             </div>
-            {getTaskImages(t.id).length > 0 && (
-  <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-    {getTaskImages(t.id).map((img) => (
-      <button
-  key={img.id}
-  type="button"
- onClick={() => {
-  const images = getTaskImages(t.id).map(
-    (item) => signedImageUrls[item.id] || item.image_url
-  )
-  setPreviewImages(images)
-  setPreviewIndex(images.indexOf(img.image_url))
-  setPreviewImage(img.image_url)
-}}
-  className="shrink-0"
->
-  <img
-    src={signedImageUrls[img.id] || img.image_url}
-    alt="Zdjęcie do zadania"
-    className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
-  />
-</button>
-    ))}
+     {getTaskImages(t.id).length > 0 && (
+  <div className="mt-3 flex gap-2 pb-1">
+    {getTaskImages(t.id).slice(0, 3).map((img, index) => {
+      const allImages = getTaskImages(t.id).map(
+        (item) => signedImageUrls[item.id] || item.image_url
+      )
+
+      const currentImage = signedImageUrls[img.id] || img.image_url
+      const remainingCount = getTaskImages(t.id).length - 3
+
+      return (
+        <button
+          key={img.id}
+          type="button"
+          onClick={() => {
+            setPreviewImages(allImages)
+            setPreviewIndex(index)
+            setPreviewImage(currentImage)
+          }}
+          className="relative shrink-0"
+        >
+          <img
+            src={currentImage}
+            alt="Zdjęcie do zadania"
+            className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
+          />
+
+          {index === 2 && remainingCount > 0 && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/60 text-lg font-bold text-white">
+              +{remainingCount}
+            </div>
+          )}
+        </button>
+      )
+    })}
   </div>
 )}
             {t.done && (
