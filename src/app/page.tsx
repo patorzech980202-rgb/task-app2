@@ -100,6 +100,7 @@ const getTaskImages = (taskId: number) => {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [newTask, setNewTask] = useState("")
   const [selectedImages, setSelectedImages] = useState<File[]>([])
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [email, setEmail] = useState("")
@@ -592,19 +593,18 @@ const received = tasks.filter((t) => {
             {getTaskImages(t.id).length > 0 && (
   <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
     {getTaskImages(t.id).map((img) => (
-      <a
-        key={img.id}
-        href={img.image_url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="shrink-0"
-      >
-        <img
-          src={img.image_url}
-          alt="Zdjęcie do zadania"
-          className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
-        />
-      </a>
+      <button
+  key={img.id}
+  type="button"
+  onClick={() => setPreviewImage(img.image_url)}
+  className="shrink-0"
+>
+  <img
+    src={img.image_url}
+    alt="Zdjęcie do zadania"
+    className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
+  />
+</button>
     ))}
   </div>
 )}
@@ -714,6 +714,18 @@ const received = tasks.filter((t) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
       <div className="mx-auto w-full max-w-xl">
+      {previewImage && (
+  <div
+    onClick={() => setPreviewImage(null)}
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+  >
+    <img
+      src={previewImage}
+      alt="Podgląd zdjęcia"
+      className="max-h-[90vh] max-w-full rounded-2xl object-contain"
+    />
+  </div>
+)}
         <div className="mb-4 rounded-3xl bg-stone-900 p-5 text-white shadow-xl">
           <div className="flex items-start justify-between gap-3">
             <div>
