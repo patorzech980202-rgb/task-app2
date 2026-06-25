@@ -34,6 +34,7 @@ type TaskImage = {
   task_id: number
   image_url: string
   file_path?: string | null
+  file_type?: string | null
 }
 
 type Status = "na stanowisku" | "poza stanowiskiem"
@@ -95,35 +96,13 @@ const getProfileName = (profileId: string | null) => {
 const getTaskImages = (taskId: number) => {
   return taskImages.filter((img) => img.task_id === taskId)
 }
-const loadSignedImageUrls = async (images: TaskImage[]) => {
-  const urls: Record<number, string> = {}
-
-  for (const img of images) {
-    if (!img.file_path) {
-      urls[img.id] = img.image_url
-      continue
-    }
-
-    const { data, error } = await supabase.storage
-      .from("task-images")
-      .createSignedUrl(img.file_path, 3600)
-
-    if (!error && data?.signedUrl) {
-      urls[img.id] = data.signedUrl
-    } else {
-      urls[img.id] = img.image_url
-    }
-  }
-
-  setSignedImageUrls(urls)
-}
   const [profile, setProfile] = useState<Profile | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [taskImages, setTaskImages] = useState<TaskImage[]>([])
   const [signedImageUrls, setSignedImageUrls] = useState<Record<number, string>>({})
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [newTask, setNewTask] = useState("")
-  const [selectedImages, setSelectedImages] = useState<File[]>([])
+  const [selectedAttachments, setSelectedAttachments] = useState<File[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [previewImages, setPreviewImages] = useState<string[]>([])
   const [previewIndex, setPreviewIndex] = useState(0)
@@ -168,7 +147,6 @@ const loadSignedImageUrls = async (images: TaskImage[]) => {
   .from("task_images")
   .select("*")
 setTaskImages(images || [])
-await loadSignedImageUrls(images || [])
       const { data: allProfiles } = await supabase.from("profiles").select("*")
       setProfiles(allProfiles || [])
       setLoading(false)
@@ -291,32 +269,35 @@ await loadSignedImageUrls(images || [])
     }
 const createdTask = data?.[0]
 
-if (createdTask && selectedImages.length > 0) {
-  for (const image of selectedImages) {
-    const fileExt = image.name.split(".").pop()
-    const fileName = `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`
-    const filePath = `tasks/${createdTask.id}/${fileName}`
+if (createdTask && selectedAttachments.length > 0) {
+for (const file of selectedAttachments) {
+  const fileExt = file.name.split(".").pop()
+  const fileName = `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`
+  const filePath = `tasks/${createdTask.id}/${fileName}`
 
-    const { error: uploadError } = await supabase.storage
-      .from("task-images")
-      .upload(filePath, image)
+  const { error: uploadError } = await supabase.storage
+    .from("task-images")
+    .upload(filePath, file, {
+      contentType: file.type,
+    })
 
-    if (uploadError) {
-      console.error("uploadError:", uploadError)
-      alert("Nie udało się wysłać zdjęcia: " + uploadError.message)
-      continue
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from("task-images")
-      .getPublicUrl(filePath)
-
-    await supabase.from("task_images").insert({
-  task_id: createdTask.id,
-  image_url: publicUrlData.publicUrl,
-  file_path: filePath,
-})
+  if (uploadError) {
+    console.error("uploadError:", uploadError)
+    alert("Nie udało się wysłać pliku: " + uploadError.message)
+    continue
   }
+
+  const { data: publicUrlData } = supabase.storage
+    .from("task-images")
+    .getPublicUrl(filePath)
+
+  await supabase.from("task_images").insert({
+    task_id: createdTask.id,
+    image_url: publicUrlData.publicUrl,
+    file_path: filePath,
+    file_type: file.type,
+  })
+}
 }
     for (const target of targets) {
       const res = await fetch(
@@ -342,7 +323,7 @@ if (createdTask && selectedImages.length > 0) {
     }
 
     setNewTask("")
-    setSelectedImages([])
+    setSelectedAttachments([])
     setShowForm(false)
   }
 
@@ -580,16 +561,31 @@ const received = tasks.filter((t) => {
     )
   }
 
-  const renderTasks = (list: Task[], mode: string) => {
-    if (list.length === 0) {
-      return (
-        <div className="mb-3 rounded-2xl border border-dashed border-stone-300 bg-white/60 p-4 text-center text-sm text-stone-500">
-          Brak zadań w tej sekcji
-        </div>
-      )
-    }
+const renderTasks = (list: Task[], mode: string) => {
+  if (list.length === 0) {
+    return (
+      <div className="mb-3 rounded-2xl border border-dashed border-stone-300 bg-white/60 p-4 text-center text-sm text-stone-500">
+        Brak zadań w tej sekcji
+      </div>
+    )
+  }
 
-    return list.map((t) => (
+  return list.map((t) => {
+    const attachments = getTaskImages(t.id)
+
+    const imagesOnly = attachments.filter((item) =>
+      item.file_type?.startsWith("image/")
+    )
+
+    const videosOnly = attachments.filter((item) =>
+      item.file_type?.startsWith("video/")
+    )
+
+    const allImageUrls = imagesOnly.map(
+      (item) => signedImageUrls[item.id] || item.image_url
+    )
+
+    return (
       <div
         key={t.id}
         className="mb-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
@@ -599,9 +595,11 @@ const received = tasks.filter((t) => {
             <p className="break-words text-sm font-semibold text-stone-900">
               {t.title}
             </p>
+
             <p className="mt-1 text-xs font-medium text-blue-700">
-            🏨 {getHotelName(t.hotel_id)}
+              🏨 {getHotelName(t.hotel_id)}
             </p>
+
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {t.done ? (
                 <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
@@ -619,63 +617,86 @@ const received = tasks.filter((t) => {
                 </span>
               )}
             </div>
-     {getTaskImages(t.id).length > 0 && (
-  <div className="mt-3 flex gap-2 pb-1">
-    {getTaskImages(t.id).slice(0, 3).map((img, index) => {
-      const allImages = getTaskImages(t.id).map(
-        (item) => signedImageUrls[item.id] || item.image_url
-      )
 
-      const currentImage = signedImageUrls[img.id] || img.image_url
-      const remainingCount = getTaskImages(t.id).length - 3
+            {attachments.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {imagesOnly.length > 0 && (
+                  <div className="flex gap-2 pb-1">
+                    {imagesOnly.slice(0, 3).map((img, index) => {
+                      const currentImage =
+                        signedImageUrls[img.id] || img.image_url
 
-      return (
-        <button
-          key={img.id}
-          type="button"
-          onClick={() => {
-            setPreviewImages(allImages)
-            setPreviewIndex(index)
-            setPreviewImage(currentImage)
-          }}
-          className="relative shrink-0"
-        >
-          <img
-            src={currentImage}
-            alt="Zdjęcie do zadania"
-            className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
-          />
+                      const remainingCount = imagesOnly.length - 3
 
-          {index === 2 && remainingCount > 0 && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/60 text-lg font-bold text-white">
-              +{remainingCount}
-            </div>
-          )}
-        </button>
-      )
-    })}
-  </div>
-)}
+                      return (
+                        <button
+                          key={img.id}
+                          type="button"
+                          onClick={() => {
+                            setPreviewImages(allImageUrls)
+                            setPreviewIndex(index)
+                            setPreviewImage(currentImage)
+                          }}
+                          className="relative shrink-0"
+                        >
+                          <img
+                            src={currentImage}
+                            alt="Zdjęcie do zadania"
+                            className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
+                          />
+
+                          {index === 2 && remainingCount > 0 && (
+                            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/60 text-lg font-bold text-white">
+                              +{remainingCount}
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {videosOnly.length > 0 && (
+                  <div className="space-y-2">
+                    {videosOnly.map((video) => {
+                      const videoUrl =
+                        signedImageUrls[video.id] || video.image_url
+
+                      return (
+                        <video
+                          key={video.id}
+                          src={videoUrl}
+                          controls
+                          className="w-full rounded-2xl border border-stone-200 shadow-sm"
+                        />
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {t.done && (
-  <div className="mt-2 text-xs text-stone-500">
-    👤 Wykonał: {getProfileName(t.completedBy)}
-    {t.completedAt && (
-      <span>
-        {new Date(t.completedAt).toLocaleString("pl-PL", {
-  timeZone: "Europe/Warsaw",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-})}
-      </span>
-    )}
-  </div>
-)}
+              <div className="mt-2 text-xs text-stone-500">
+                👤 Wykonał: {getProfileName(t.completedBy)}
+                {t.completedAt && (
+                  <span>
+                    {" "}•{" "}
+                    {new Date(t.completedAt).toLocaleString("pl-PL", {
+                      timeZone: "Europe/Warsaw",
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
-                   {mode === "received" && (
+          {mode === "received" && (
             <div className="shrink-0">
               {!t.done ? (
                 <button
@@ -707,8 +728,9 @@ const received = tasks.filter((t) => {
           )}
         </div>
       </div>
-    ))
-  }
+    )
+  })
+}
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-blue-200 flex items-center justify-center p-6">
@@ -942,20 +964,54 @@ const received = tasks.filter((t) => {
                   ))}
                 </select>
               )}
+              <label className="block text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+  📎 Zdjęcia i filmy
+</label>
                   <input
                   type="file"
-                 accept="image/*"
+                 accept="image/*,video/*"
                   multiple
                   className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                   onChange={(e) => {
                   const files = Array.from(e.target.files || [])
-                 setSelectedImages(files)
+
+const images = files.filter((file) => file.type.startsWith("image/"))
+const videos = files.filter((file) => file.type.startsWith("video/"))
+
+if (images.length > 10) {
+  alert("Możesz dodać maksymalnie 10 zdjęć.")
+  e.target.value = ""
+  return
+}
+
+if (videos.length > 1) {
+  alert("Możesz dodać maksymalnie 1 film.")
+  e.target.value = ""
+  return
+}
+
+setSelectedAttachments(files)
                   }}
                   />
-                  {selectedImages.length > 0 && (
-  <p className="text-xs text-stone-500">
-    Wybrano zdjęć: {selectedImages.length}
-  </p>
+                  {selectedAttachments.length > 0 && (
+  <div className="rounded-xl bg-stone-50 p-3">
+    <p className="mb-2 text-xs font-bold text-stone-500">
+      Wybrane pliki ({selectedAttachments.length})
+    </p>
+
+    <div className="space-y-1">
+      {selectedAttachments.map((file, index) => (
+        <div key={index} className="truncate text-xs text-stone-700">
+          {file.type.startsWith("image/")
+            ? "🖼️ "
+            : file.type.startsWith("video/")
+            ? "🎥 "
+            : "📄 "}
+          {file.name}
+        </div>
+      ))}
+    </div>
+  </div>
 )}
               <select
                 className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
