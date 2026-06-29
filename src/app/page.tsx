@@ -56,6 +56,7 @@ type Profile = {
   role: "pracownik" | "kierownik" | "administrator"
   push_token?: string | null
   current_area_id: number | null
+  current_area_ids: number[] | null
 }
 
 type SectionKey = "otrzymane" | "wysłane" | "archiwum"
@@ -66,6 +67,7 @@ export default function Home() {
   const [filterHotel, setFilterHotel] = useState(0)
   const [showForm, setShowForm] = useState(false)
   const [selectedStartArea, setSelectedStartArea] = useState<number | null>(null)
+  const [selectedStartAreas, setSelectedStartAreas] = useState<number[]>([])
   const [showAreaPicker, setShowAreaPicker] = useState(false)
   const [openSections, setOpenSections] = useState({
     otrzymane: true,
@@ -455,23 +457,25 @@ const getAreaName = (areaId: number | null) => {
   setProfile({ ...profile, status: "na stanowisku" })
 }
 const startHousekeepingShift = async () => {
-  if (!profile || !selectedStartArea) {
-    alert("Wybierz obszar pracy.")
-    return
-  }
+  if (!profile || selectedStartAreas.length === 0) {
+  alert("Wybierz przynajmniej jeden obszar pracy.")
+  return
+}
 
   await supabase
     .from("profiles")
     .update({
       status: "na stanowisku",
-      current_area_id: selectedStartArea,
+      current_area_id: selectedStartAreas[0],
+      current_area_ids: selectedStartAreas,
     })
     .eq("id", profile.id)
 
   setProfile({
     ...profile,
     status: "na stanowisku",
-    current_area_id: selectedStartArea,
+    current_area_id: selectedStartAreas[0],
+    current_area_ids: selectedStartAreas,
   })
 }
 const startWorkOnArea = async (areaId: number) => {
@@ -916,18 +920,32 @@ if (
           Wybierz obszar pracy przed rozpoczęciem zmiany.
         </p>
         
-        <select
-          className="mt-5 w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-          value={selectedStartArea ?? ""}
-          onChange={(e) => setSelectedStartArea(Number(e.target.value))}
-        >
-          <option value="">Wybierz obszar</option>
-          {availableAreas.map((area) => (
-  <option key={area.id} value={area.id}>
-    {area.name}
-  </option>
-))}
-        </select>
+        <div className="mt-5 space-y-2">
+  {availableAreas.map((area) => {
+    const checked = selectedStartAreas.includes(area.id)
+
+    return (
+      <button
+        key={area.id}
+        type="button"
+        onClick={() => {
+          setSelectedStartAreas((prev) =>
+            prev.includes(area.id)
+              ? prev.filter((id) => id !== area.id)
+              : [...prev, area.id]
+          )
+        }}
+        className={`w-full rounded-2xl border p-3 text-left text-sm font-semibold ${
+          checked
+            ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+            : "border-stone-300 bg-stone-50 text-stone-900"
+        }`}
+      >
+        {checked ? "✅" : "⬜"} {area.name}
+      </button>
+    )
+  })}
+</div>
 
         <button
           onClick={startHousekeepingShift}
