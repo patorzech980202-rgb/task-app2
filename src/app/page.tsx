@@ -1177,7 +1177,7 @@ if (
 
             <button
               onClick={enablePush}
-              className="rounded-2xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-white"
+              className="rounded-2xl bg-white px-3 py-2 text-xs font-semibold text-stone-900"
             >
               🔔 Push
             </button>
