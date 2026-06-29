@@ -540,7 +540,11 @@ export default function Home() {
     }
 
     if (isManager) {
-      return t.departmentId === profile.department_id && notArchived
+  return (
+    t.departmentId === profile.department_id &&
+    (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    notArchived
+  )
     }
 
     return t.authorId === profile.id && notArchived
@@ -554,8 +558,12 @@ export default function Home() {
     }
 
     if (isManager) {
-      return t.departmentId === profile.department_id && t.done
-    }
+  return (
+    t.departmentId === profile.department_id &&
+    (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    t.done
+  )
+}
 
     return (
       t.hotel_id === profile.hotel_id &&
@@ -572,8 +580,12 @@ export default function Home() {
     }
 
     if (isManager) {
-      return t.departmentId === profile.department_id && t.done
-    }
+  return (
+    t.departmentId === profile.department_id &&
+    (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    t.done
+  )
+}
 
     return t.authorId === profile.id && t.archivedBy?.includes(profile.id)
   })
