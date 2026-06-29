@@ -1086,36 +1086,33 @@ if (
               {profile.status === "na stanowisku" ? "🔴 Zakończ zmianę" : "🟢 Rozpocznij"}
             </button>
 
-{profile.department_id === 1 && (
-  <select
-    className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
-    value={profile.current_area_id ?? ""}
-    onChange={async (e) => {
-      const newArea = Number(e.target.value)
+            {profile.department_id === 1 &&
+  profile.status === "na stanowisku" &&
+  profile.current_area_ids &&
+  profile.current_area_ids.length > 0 && (
+    <div className="rounded-2xl bg-white/10 p-3">
+      <p className="mb-2 text-xs font-bold uppercase tracking-[0.15em] text-stone-300">
+        Aktualne obszary
+      </p>
 
-      await supabase
-        .from("profiles")
-        .update({
-          current_area_id: newArea,
-        })
-        .eq("id", profile.id)
+      <div className="flex flex-wrap gap-2">
+        {profile.current_area_ids.map((id) => (
+          <span
+            key={id}
+            className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white"
+          >
+            📍 {getAreaName(id)}
+          </span>
+        ))}
+      </div>
 
-      setProfile({
-        ...profile,
-        current_area_id: newArea,
-      })
-    }}
-  >
-    {getAreasForHotel(profile.hotel_id).map((area) => (
-      <option
-        key={area.id}
-        value={area.id}
-        className="text-black"
+      <button
+        onClick={() => setShowAreaPicker(true)}
+        className="mt-3 w-full rounded-xl bg-white/15 py-2 text-xs font-semibold text-white"
       >
-        {area.name}
-      </option>
-    ))}
-  </select>
+        Zmień obszary
+      </button>
+    </div>
 )}
 
             <button
