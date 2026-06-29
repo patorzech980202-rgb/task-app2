@@ -427,34 +427,25 @@ const getAreaName = (areaId: number | null) => {
       .eq("id", id)
   }
 
-  const toggleStatus = async () => {
+const toggleStatus = async () => {
   if (!profile) return
 
-  if (profile.status === "na stanowisku") {
-    await supabase
-      .from("profiles")
-      .update({
-        status: "poza stanowiskiem",
-        current_area_id: null,
-      })
-      .eq("id", profile.id)
-
-    setProfile({
-      ...profile,
-      status: "poza stanowiskiem",
-      current_area_id: null,
-    })
-
-    setSelectedStartArea(null)
-    return
-  }
+  const newStatus: Status =
+    profile.status === "na stanowisku"
+      ? "poza stanowiskiem"
+      : "na stanowisku"
 
   await supabase
     .from("profiles")
-    .update({ status: "na stanowisku" })
+    .update({
+      status: newStatus,
+    })
     .eq("id", profile.id)
 
-  setProfile({ ...profile, status: "na stanowisku" })
+  setProfile({
+    ...profile,
+    status: newStatus,
+  })
 }
 const startHousekeepingShift = async () => {
   if (!profile || selectedStartAreas.length === 0) {
@@ -921,7 +912,9 @@ if (
         </p>
         
         <div className="mt-5 space-y-2">
-  {availableAreas.map((area) => {
+  {getAreasForHotel(profile.hotel_id)
+  .filter((area) => area.name !== "Ogólne")
+  .map((area) => {
     const checked = selectedStartAreas.includes(area.id)
 
     return (
