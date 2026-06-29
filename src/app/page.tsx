@@ -66,8 +66,6 @@ export default function Home() {
   const [selectedHotel, setSelectedHotel] = useState(1)
   const [filterHotel, setFilterHotel] = useState(0)
   const [showForm, setShowForm] = useState(false)
-  const [selectedStartArea, setSelectedStartArea] = useState<number | null>(null)
-  const [selectedStartAreas, setSelectedStartAreas] = useState<number[]>([])
   const [showAreaPicker, setShowAreaPicker] = useState(false)
   const [openSections, setOpenSections] = useState({
     otrzymane: true,
@@ -94,7 +92,6 @@ export default function Home() {
   const [signedImageUrls, setSignedImageUrls] = useState<Record<number, string>>({})
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [areas, setAreas] = useState<Area[]>([])
-  const [selectedArea, setSelectedArea] = useState<number | null>(null)
   const [newTask, setNewTask] = useState("")
   const [selectedAttachments, setSelectedAttachments] = useState<File[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -446,47 +443,6 @@ const toggleStatus = async () => {
     ...profile,
     status: newStatus,
   })
-}
-const startHousekeepingShift = async () => {
-  if (!profile || selectedStartAreas.length === 0) {
-  alert("Wybierz przynajmniej jeden obszar pracy.")
-  return
-}
-
-  await supabase
-    .from("profiles")
-    .update({
-      status: "na stanowisku",
-      current_area_id: selectedStartAreas[0],
-      current_area_ids: selectedStartAreas,
-    })
-    .eq("id", profile.id)
-
-  setProfile({
-    ...profile,
-    status: "na stanowisku",
-    current_area_id: selectedStartAreas[0],
-    current_area_ids: selectedStartAreas,
-  })
-}
-const startWorkOnArea = async (areaId: number) => {
-  if (!profile) return
-
-  await supabase
-    .from("profiles")
-    .update({
-      status: "na stanowisku",
-      current_area_id: areaId,
-    })
-    .eq("id", profile.id)
-
-  setProfile({
-    ...profile,
-    status: "na stanowisku",
-    current_area_id: areaId,
-  })
-
-  setShowAreaPicker(false)
 }
   const enablePush = async () => {
     try {
@@ -891,72 +847,6 @@ const startWorkOnArea = async (areaId: number) => {
       </div>
     )
   }
-if (
-  profile.department_id === 1 &&
-  profile.role === "pracownik" &&
-  profile.status === "poza stanowiskiem"
-) {
-  const availableAreas = areas.filter(
-  (area) => area.hotel_id === profile.hotel_id && area.name !== "Ogólne"
-)
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl border border-stone-200">
-        <h1 className="text-2xl font-bold text-stone-900">
-          👋 Cześć, {profile.name}
-        </h1>
-
-        <p className="mt-2 text-sm text-stone-500">
-          Wybierz obszar pracy przed rozpoczęciem zmiany.
-        </p>
-        
-        <div className="mt-5 space-y-2">
-  {getAreasForHotel(profile.hotel_id)
-  .filter((area) => area.name !== "Ogólne")
-  .map((area) => {
-    const checked = selectedStartAreas.includes(area.id)
-
-    return (
-      <button
-        key={area.id}
-        type="button"
-        onClick={() => {
-          setSelectedStartAreas((prev) =>
-            prev.includes(area.id)
-              ? prev.filter((id) => id !== area.id)
-              : [...prev, area.id]
-          )
-        }}
-        className={`w-full rounded-2xl border p-3 text-left text-sm font-semibold ${
-          checked
-            ? "border-emerald-400 bg-emerald-50 text-emerald-800"
-            : "border-stone-300 bg-stone-50 text-stone-900"
-        }`}
-      >
-        {checked ? "✅" : "⬜"} {area.name}
-      </button>
-    )
-  })}
-</div>
-
-        <button
-          onClick={startHousekeepingShift}
-          className="mt-4 w-full rounded-2xl bg-emerald-500 py-3 text-sm font-bold text-white shadow-md"
-        >
-          🟢 Rozpocznij zmianę
-        </button>
-
-        <button
-          onClick={signOut}
-          className="mt-3 w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white"
-        >
-          Wyloguj
-        </button>
-      </div>
-    </div>
-  )
-}
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
       <div className="mx-auto w-full max-w-xl">
