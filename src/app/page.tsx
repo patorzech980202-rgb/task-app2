@@ -915,18 +915,22 @@ if (
         <p className="mt-2 text-sm text-stone-500">
           Wybierz obszar pracy przed rozpoczęciem zmiany.
         </p>
-
+          <p className="text-xs text-red-500">
+            DEBUG areas: {areas.length} | hotel: {profile.hotel_id}
+          </p>
         <select
           className="mt-5 w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
           value={selectedStartArea ?? ""}
           onChange={(e) => setSelectedStartArea(Number(e.target.value))}
         >
           <option value="">Wybierz obszar</option>
-          {availableAreas.map((area) => (
-            <option key={area.id} value={area.id}>
-              {area.name}
-            </option>
-          ))}
+          {areas
+  .filter((area) => Number(area.hotel_id) === Number(profile.hotel_id))
+  .map((area) => (
+    <option key={area.id} value={area.id}>
+      {area.name}
+    </option>
+  ))}
         </select>
 
         <button
