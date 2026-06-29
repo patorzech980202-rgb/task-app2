@@ -28,6 +28,7 @@ type Task = {
   completedAt: string | null
   createdAt: string
   archivedBy: string[]
+  area_id: number | null
 }
 
 type TaskImage = {
@@ -36,6 +37,11 @@ type TaskImage = {
   image_url: string
   file_path?: string | null
   file_type?: string | null
+}
+type Area = {
+  id: number
+  hotel_id: number
+  name: string
 }
 
 type Status = "na stanowisku" | "poza stanowiskiem"
@@ -49,6 +55,7 @@ type Profile = {
   status: Status
   role: "pracownik" | "kierownik" | "administrator"
   push_token?: string | null
+  current_area_id: number | null
 }
 
 type SectionKey = "otrzymane" | "wysłane" | "archiwum"
@@ -58,7 +65,8 @@ export default function Home() {
   const [selectedHotel, setSelectedHotel] = useState(1)
   const [filterHotel, setFilterHotel] = useState(0)
   const [showForm, setShowForm] = useState(false)
-
+  const [selectedStartArea, setSelectedStartArea] = useState<number | null>(null)
+  const [showAreaPicker, setShowAreaPicker] = useState(false)
   const [openSections, setOpenSections] = useState({
     otrzymane: true,
     wysłane: false,
@@ -83,6 +91,8 @@ export default function Home() {
   const [taskImages, setTaskImages] = useState<TaskImage[]>([])
   const [signedImageUrls, setSignedImageUrls] = useState<Record<number, string>>({})
   const [profiles, setProfiles] = useState<Profile[]>([])
+  const [areas, setAreas] = useState<Area[]>([])
+  const [selectedArea, setSelectedArea] = useState<number | null>(null)
   const [newTask, setNewTask] = useState("")
   const [selectedAttachments, setSelectedAttachments] = useState<File[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -97,7 +107,21 @@ export default function Home() {
   const getHotelName = (hotelId: number | null) => {
     return hotels.find((h) => h.id === hotelId)?.name || "Brak hotelu"
   }
+const getAreasForHotel = (hotelId: number | null) => {
+  if (!hotelId) return []
 
+  return areas.filter((area) => area.hotel_id === hotelId)
+}
+
+const getGeneralAreaId = (hotelId: number | null) => {
+  return getAreasForHotel(hotelId).find((area) => area.name === "Ogólne")?.id || null
+}
+
+const getAreaName = (areaId: number | null) => {
+  if (!areaId) return "Bez obszaru"
+
+  return areas.find((area) => area.id === areaId)?.name || "Bez obszaru"
+}
   const getProfileName = (profileId: string | null) => {
     if (!profileId) return "Nieznany pracownik"
 
@@ -185,6 +209,8 @@ export default function Home() {
       const { data: allProfiles } = await supabase.from("profiles").select("*")
       setProfiles(allProfiles || [])
       setLoading(false)
+      const { data: allAreas } = await supabase.from("areas").select("*")
+      setAreas(allAreas || [])
     }
 
     load()
@@ -399,21 +425,73 @@ export default function Home() {
   }
 
   const toggleStatus = async () => {
-    if (!profile) return
+  if (!profile) return
 
-    const newStatus: Status =
-      profile.status === "na stanowisku"
-        ? "poza stanowiskiem"
-        : "na stanowisku"
-
+  if (profile.status === "na stanowisku") {
     await supabase
       .from("profiles")
-      .update({ status: newStatus })
+      .update({
+        status: "poza stanowiskiem",
+        current_area_id: null,
+      })
       .eq("id", profile.id)
 
-    setProfile({ ...profile, status: newStatus })
+    setProfile({
+      ...profile,
+      status: "poza stanowiskiem",
+      current_area_id: null,
+    })
+
+    setSelectedStartArea(null)
+    return
   }
 
+  await supabase
+    .from("profiles")
+    .update({ status: "na stanowisku" })
+    .eq("id", profile.id)
+
+  setProfile({ ...profile, status: "na stanowisku" })
+}
+const startHousekeepingShift = async () => {
+  if (!profile || !selectedStartArea) {
+    alert("Wybierz obszar pracy.")
+    return
+  }
+
+  await supabase
+    .from("profiles")
+    .update({
+      status: "na stanowisku",
+      current_area_id: selectedStartArea,
+    })
+    .eq("id", profile.id)
+
+  setProfile({
+    ...profile,
+    status: "na stanowisku",
+    current_area_id: selectedStartArea,
+  })
+}
+const startWorkOnArea = async (areaId: number) => {
+  if (!profile) return
+
+  await supabase
+    .from("profiles")
+    .update({
+      status: "na stanowisku",
+      current_area_id: areaId,
+    })
+    .eq("id", profile.id)
+
+  setProfile({
+    ...profile,
+    status: "na stanowisku",
+    current_area_id: areaId,
+  })
+
+  setShowAreaPicker(false)
+}
   const enablePush = async () => {
     try {
       if (!("serviceWorker" in navigator)) {
@@ -817,10 +895,60 @@ export default function Home() {
       </div>
     )
   }
+if (
+  profile.department_id === 1 &&
+  profile.role === "pracownik" &&
+  profile.status === "poza stanowiskiem"
+) {
+  const availableAreas = getAreasForHotel(profile.hotel_id).filter(
+    (area) => area.name !== "Ogólne"
+  )
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
+      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl border border-stone-200">
+        <h1 className="text-2xl font-bold text-stone-900">
+          👋 Cześć, {profile.name}
+        </h1>
+
+        <p className="mt-2 text-sm text-stone-500">
+          Wybierz obszar pracy przed rozpoczęciem zmiany.
+        </p>
+
+        <select
+          className="mt-5 w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+          value={selectedStartArea ?? ""}
+          onChange={(e) => setSelectedStartArea(Number(e.target.value))}
+        >
+          <option value="">Wybierz obszar</option>
+          {availableAreas.map((area) => (
+            <option key={area.id} value={area.id}>
+              {area.name}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={startHousekeepingShift}
+          className="mt-4 w-full rounded-2xl bg-emerald-500 py-3 text-sm font-bold text-white shadow-md"
+        >
+          🟢 Rozpocznij zmianę
+        </button>
+
+        <button
+          onClick={signOut}
+          className="mt-3 w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white"
+        >
+          Wyloguj
+        </button>
+      </div>
+    </div>
+  )
+}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
       <div className="mx-auto w-full max-w-xl">
+        
         {previewImage && (
           <div
             className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
@@ -930,13 +1058,46 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
+          <div className={`mt-5 grid gap-2 ${profile.department_id === 1? "grid-cols-1": "grid-cols-3"
+            }`}>
             <button
               onClick={toggleStatus}
               className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
             >
-              Status
+              {profile.status === "na stanowisku" ? "🔴 Zakończ zmianę" : "🟢 Rozpocznij"}
             </button>
+
+{profile.department_id === 1 && (
+  <select
+    className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+    value={profile.current_area_id ?? ""}
+    onChange={async (e) => {
+      const newArea = Number(e.target.value)
+
+      await supabase
+        .from("profiles")
+        .update({
+          current_area_id: newArea,
+        })
+        .eq("id", profile.id)
+
+      setProfile({
+        ...profile,
+        current_area_id: newArea,
+      })
+    }}
+  >
+    {getAreasForHotel(profile.hotel_id).map((area) => (
+      <option
+        key={area.id}
+        value={area.id}
+        className="text-black"
+      >
+        {area.name}
+      </option>
+    ))}
+  </select>
+)}
 
             <button
               onClick={enablePush}
