@@ -862,89 +862,18 @@ const toggleStatus = async () => {
     setShowAreaPicker={setShowAreaPicker}
   />
 )}
-        
         {previewImage && (
-          <div
-            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
-            onTouchStart={(e) => {
-              touchStartX.current = e.touches[0].clientX
-            }}
-            onTouchEnd={(e) => {
-              if (touchStartX.current === null) return
-
-              const touchEndX = e.changedTouches[0].clientX
-              const diff = touchStartX.current - touchEndX
-
-              if (Math.abs(diff) > 50 && previewImages.length > 1) {
-                if (diff > 0) {
-                  const newIndex =
-                    previewIndex === previewImages.length - 1 ? 0 : previewIndex + 1
-
-                  setPreviewIndex(newIndex)
-                  setPreviewImage(previewImages[newIndex])
-                } else {
-                  const newIndex =
-                    previewIndex === 0 ? previewImages.length - 1 : previewIndex - 1
-
-                  setPreviewIndex(newIndex)
-                  setPreviewImage(previewImages[newIndex])
-                }
-              }
-
-              touchStartX.current = null
-            }}
-          >
-            <button
-              onClick={() => {
-                setPreviewImage(null)
-                setPreviewImages([])
-                setPreviewIndex(0)
-              }}
-              className="absolute right-4 top-4 rounded-full bg-white px-4 py-2 text-sm font-bold text-black"
-            >
-              Zamknij
-            </button>
-
-            <div className="mb-3 text-sm font-semibold text-white">
-              Zdjęcie {previewIndex + 1} z {previewImages.length}
-            </div>
-
-            <div className="flex w-full items-center justify-center gap-3">
-              <button
-                onClick={() => {
-                  const newIndex =
-                    previewIndex === 0 ? previewImages.length - 1 : previewIndex - 1
-
-                  setPreviewIndex(newIndex)
-                  setPreviewImage(previewImages[newIndex])
-                }}
-                className="rounded-full bg-white/90 px-4 py-3 text-xl font-bold text-black"
-              >
-                ‹
-              </button>
-
-              <img
-                src={previewImage}
-                alt="Podgląd zdjęcia"
-                className="max-h-[80vh] max-w-[75vw] rounded-2xl object-contain"
-              />
-
-              <button
-                onClick={() => {
-                  const newIndex =
-                    previewIndex === previewImages.length - 1 ? 0 : previewIndex + 1
-
-                  setPreviewIndex(newIndex)
-                  setPreviewImage(previewImages[newIndex])
-                }}
-                className="rounded-full bg-white/90 px-4 py-3 text-xl font-bold text-black"
-              >
-                ›
-              </button>
-            </div>
-          </div>
-        )}
-
+  <ImagePreviewModal
+    previewImage={previewImage}
+    previewImages={previewImages}
+    previewIndex={previewIndex}
+    setPreviewImage={setPreviewImage}
+    setPreviewImages={setPreviewImages}
+    setPreviewIndex={setPreviewIndex}
+    touchStartX={touchStartX}
+  />
+)}
+        
         <AppHeader
           profile={profile}
           toggleStatus={toggleStatus}
