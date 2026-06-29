@@ -967,6 +967,66 @@ if (
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
       <div className="mx-auto w-full max-w-xl">
+
+        {showAreaPicker && profile.department_id === 1 && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-xl">
+      <h2 className="text-lg font-bold text-stone-900">
+        Zmień obszary pracy
+      </h2>
+
+      <div className="mt-4 space-y-2">
+        {getAreasForHotel(profile.hotel_id)
+          .filter((area) => area.name !== "Ogólne")
+          .map((area) => {
+            const checked = profile.current_area_ids?.includes(area.id)
+
+            return (
+              <button
+                key={area.id}
+                type="button"
+                onClick={async () => {
+                  const current = profile.current_area_ids || []
+
+                  const updated = checked
+                    ? current.filter((id) => id !== area.id)
+                    : [...current, area.id]
+
+                  await supabase
+                    .from("profiles")
+                    .update({
+                      current_area_ids: updated,
+                      current_area_id: updated[0] || null,
+                    })
+                    .eq("id", profile.id)
+
+                  setProfile({
+                    ...profile,
+                    current_area_ids: updated,
+                    current_area_id: updated[0] || null,
+                  })
+                }}
+                className={`w-full rounded-2xl border p-3 text-left text-sm font-semibold ${
+                  checked
+                    ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+                    : "border-stone-300 bg-stone-50 text-stone-900"
+                }`}
+              >
+                {checked ? "✅" : "⬜"} {area.name}
+              </button>
+            )
+          })}
+      </div>
+
+      <button
+        onClick={() => setShowAreaPicker(false)}
+        className="mt-4 w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white"
+      >
+        Gotowe
+      </button>
+    </div>
+  </div>
+)}
         
         {previewImage && (
           <div
