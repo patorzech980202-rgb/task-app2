@@ -208,9 +208,10 @@ const getAreaName = (areaId: number | null) => {
 
       const { data: allProfiles } = await supabase.from("profiles").select("*")
       setProfiles(allProfiles || [])
-      setLoading(false)
+     
       const { data: allAreas } = await supabase.from("areas").select("*")
       setAreas(allAreas || [])
+       setLoading(false)
     }
 
     load()
@@ -900,9 +901,9 @@ if (
   profile.role === "pracownik" &&
   profile.status === "poza stanowiskiem"
 ) {
-  const availableAreas = getAreasForHotel(profile.hotel_id).filter(
-    (area) => area.name !== "Ogólne"
-  )
+  const availableAreas = areas.filter(
+  (area) => area.hotel_id === profile.hotel_id && area.name !== "Ogólne"
+)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
