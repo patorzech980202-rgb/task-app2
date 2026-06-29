@@ -1143,7 +1143,9 @@ if (
               onClick={toggleStatus}
               className="rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
             >
-              {profile.status === "na stanowisku" ? "🔴 Zakończ zmianę" : "🟢 Rozpocznij"}
+              {profile.status === "na stanowisku"
+  ? "🔴 Poza stanowiskiem"
+  : "🟢 Na stanowisku"}
             </button>
 
             {profile.department_id === 1 &&
