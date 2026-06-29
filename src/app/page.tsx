@@ -1170,7 +1170,7 @@ if (
         onClick={() => setShowAreaPicker(true)}
         className="mt-3 w-full rounded-2xl bg-white py-2 text-xs font-semibold text-stone-900"
       >
-        Zmień obszary
+        Wybierz piętro
       </button>
     </div>
 )}
