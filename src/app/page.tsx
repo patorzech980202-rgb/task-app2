@@ -67,6 +67,7 @@ type SectionKey = "otrzymane" | "wysłane" | "archiwum"
 
 export default function Home() {
   const [selectedDepartment, setSelectedDepartment] = useState(1)
+  const [selectedArea, setSelectedArea] = useState<number | null>(null)
   const [selectedHotel, setSelectedHotel] = useState(1)
   const [filterHotel, setFilterHotel] = useState(0)
   const [showForm, setShowForm] = useState(false)
@@ -290,6 +291,11 @@ const getAreaName = (areaId: number | null) => {
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
 
+    if (selectedDepartment === 1 && selectedArea === null) {
+  alert("Wybierz obszar dla zadania pokojowych.")
+  return
+    }
+
     const { data: candidates, error: candidatesError } = await supabase
       .from("profiles")
       .select("*")
@@ -320,6 +326,7 @@ const getAreaName = (areaId: number | null) => {
         assigneeId: null,
         departmentId: selectedDepartment,
         hotel_id: isManager || isAdmin ? selectedHotel : profile.hotel_id,
+        area_id: selectedDepartment === 1 ? selectedArea : null,
         done: false,
         completedBy: null,
         archivedBy: [],
@@ -879,7 +886,10 @@ const toggleStatus = async () => {
                 <select
                   className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                   value={selectedHotel}
-                  onChange={(e) => setSelectedHotel(Number(e.target.value))}
+                  onChange={(e) => {
+                  setSelectedHotel(Number(e.target.value))
+                  setSelectedArea(null)
+                  }}
                 >
                   {hotels.map((h) => (
                     <option key={h.id} value={h.id}>
@@ -952,6 +962,28 @@ const toggleStatus = async () => {
                   </option>
                 ))}
               </select>
+
+              {selectedDepartment === 1 && (
+   <select
+    className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+    value={selectedArea ?? ""}
+    onChange={(e) => setSelectedArea(Number(e.target.value))}
+  >
+    <option value="">Wybierz obszar</option>
+
+    {areas
+      .filter(
+        (area) =>
+          area.hotel_id ===
+          (isManager || isAdmin ? selectedHotel : profile.hotel_id)
+      )
+      .map((area) => (
+        <option key={area.id} value={area.id}>
+          {area.name}
+        </option>
+      ))}
+  </select>
+)}
 
               <button
                 onClick={addTask}
