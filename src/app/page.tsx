@@ -561,14 +561,23 @@ const toggleStatus = async () => {
       )
     }
 
-    return (
-      t.hotel_id === profile.hotel_id &&
-      t.departmentId === profile.department_id &&
-      notAuthor &&
-      profile.status === "na stanowisku" &&
-      notArchived &&
-      !t.done
-    )
+  const generalAreaId = getGeneralAreaId(profile.hotel_id)
+
+const areaMatches =
+  profile.department_id !== 1 ||
+  t.area_id === generalAreaId ||
+  (t.area_id !== null &&
+    profile.current_area_ids?.includes(t.area_id))
+
+return (
+  t.hotel_id === profile.hotel_id &&
+  t.departmentId === profile.department_id &&
+  areaMatches &&
+  notAuthor &&
+  profile.status === "na stanowisku" &&
+  notArchived &&
+  !t.done
+)
   })
 
   const sent = tasks.filter((t) => {
