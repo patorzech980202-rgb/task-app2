@@ -71,7 +71,8 @@ export default function AppHeader({
             : "🟢 Na stanowisku"}
         </button>
 
-        {profile.department_id === 1 && (
+        {profile.department_id === 1 &&
+  profile.role === "pracownik" && (
   <div className="rounded-2xl bg-white/10 p-3">
     {profile.current_area_ids && profile.current_area_ids.length > 0 ? (
       <div className="flex flex-wrap gap-2">
