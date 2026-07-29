@@ -874,125 +874,143 @@ const toggleStatus = async () => {
           </button>
 
           {showForm && (
-            <div className="mt-4 space-y-3">
-              <input
-                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-                placeholder="Treść zadania"
-                value={newTask}
-                onChange={(e) => setNewTask(e.target.value)}
-              />
+  <div className="mt-4 space-y-3">
 
-              {(isManager || isAdmin) && (
-                <select
-                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-                  value={selectedHotel}
-                  onChange={(e) => {
-                  setSelectedHotel(Number(e.target.value))
-                  setSelectedArea(null)
-                  }}
-                >
-                  {hotels.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+    {/* 1. HOTEL */}
+    {(isManager || isAdmin) && (
+      <select
+        className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+        value={selectedHotel}
+        onChange={(e) => {
+          setSelectedHotel(Number(e.target.value))
+          setSelectedArea(null)
+        }}
+      >
+        {hotels.map((h) => (
+          <option key={h.id} value={h.id}>
+            {h.name}
+          </option>
+        ))}
+      </select>
+    )}
 
-              <label className="block text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
-                📎 Zdjęcia i filmy
-              </label>
-
-              <input
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-                onChange={(e) => {
-                  const files = Array.from(e.target.files || [])
-
-                  const images = files.filter((file) => file.type.startsWith("image/"))
-                  const videos = files.filter((file) => file.type.startsWith("video/"))
-
-                  if (images.length > 10) {
-                    alert("Możesz dodać maksymalnie 10 zdjęć.")
-                    e.target.value = ""
-                    return
-                  }
-
-                  if (videos.length > 1) {
-                    alert("Możesz dodać maksymalnie 1 film.")
-                    e.target.value = ""
-                    return
-                  }
-
-                  setSelectedAttachments(files)
-                }}
-              />
-
-              {selectedAttachments.length > 0 && (
-                <div className="rounded-xl bg-stone-50 p-3">
-                  <p className="mb-2 text-xs font-bold text-stone-500">
-                    Wybrane pliki ({selectedAttachments.length})
-                  </p>
-
-                  <div className="space-y-1">
-                    {selectedAttachments.map((file, index) => (
-                      <div key={index} className="truncate text-xs text-stone-700">
-                        {file.type.startsWith("image/")
-                          ? "🖼️ "
-                          : file.type.startsWith("video/")
-                          ? "🎥 "
-                          : "📄 "}
-                        {file.name}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <select
-                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(Number(e.target.value))}
-              >
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-
-              {selectedDepartment === 1 && (
-   <select
-    className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-    value={selectedArea ?? ""}
-    onChange={(e) => setSelectedArea(Number(e.target.value))}
-  >
-    <option value="">Wybierz obszar</option>
-
-    {areas
-      .filter(
-        (area) =>
-          area.hotel_id ===
-          (isManager || isAdmin ? selectedHotel : profile.hotel_id)
-      )
-      .map((area) => (
-        <option key={area.id} value={area.id}>
-          {area.name}
+    {/* 2. DZIAŁ */}
+    <select
+      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+      value={selectedDepartment}
+      onChange={(e) => {
+        setSelectedDepartment(Number(e.target.value))
+        setSelectedArea(null)
+      }}
+    >
+      {departments.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.name}
         </option>
       ))}
-  </select>
-)}
+    </select>
 
-              <button
-                onClick={addTask}
-                className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
-              >
-                Wyślij zadanie
-              </button>
+    {/* 3. OBSZAR - tylko dla pokojowych */}
+    {selectedDepartment === 1 && (
+      <select
+        className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+        value={selectedArea ?? ""}
+        onChange={(e) => setSelectedArea(Number(e.target.value))}
+      >
+        <option value="">Wybierz obszar</option>
+
+        {areas
+          .filter(
+            (area) =>
+              area.hotel_id ===
+              (isManager || isAdmin ? selectedHotel : profile.hotel_id)
+          )
+          .map((area) => (
+            <option key={area.id} value={area.id}>
+              {area.name}
+            </option>
+          ))}
+      </select>
+    )}
+
+    {/* 4. TREŚĆ ZADANIA */}
+    <input
+      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+      placeholder="Treść zadania"
+      value={newTask}
+      onChange={(e) => setNewTask(e.target.value)}
+    />
+
+    {/* 5. ZDJĘCIA I FILMY */}
+    <label className="block text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+      📎 Zdjęcia i filmy
+    </label>
+
+    <input
+      type="file"
+      accept="image/*,video/*"
+      multiple
+      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+      onChange={(e) => {
+        const files = Array.from(e.target.files || [])
+
+        const images = files.filter((file) =>
+          file.type.startsWith("image/")
+        )
+
+        const videos = files.filter((file) =>
+          file.type.startsWith("video/")
+        )
+
+        if (images.length > 10) {
+          alert("Możesz dodać maksymalnie 10 zdjęć.")
+          e.target.value = ""
+          return
+        }
+
+        if (videos.length > 1) {
+          alert("Możesz dodać maksymalnie 1 film.")
+          e.target.value = ""
+          return
+        }
+
+        setSelectedAttachments(files)
+      }}
+    />
+
+    {selectedAttachments.length > 0 && (
+      <div className="rounded-xl bg-stone-50 p-3">
+        <p className="mb-2 text-xs font-bold text-stone-500">
+          Wybrane pliki ({selectedAttachments.length})
+        </p>
+
+        <div className="space-y-1">
+          {selectedAttachments.map((file, index) => (
+            <div
+              key={index}
+              className="truncate text-xs text-stone-700"
+            >
+              {file.type.startsWith("image/")
+                ? "🖼️ "
+                : file.type.startsWith("video/")
+                ? "🎥 "
+                : "📄 "}
+              {file.name}
             </div>
-          )}
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* 6. WYŚLIJ */}
+    <button
+      onClick={addTask}
+      className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
+    >
+      Wyślij zadanie
+    </button>
+  </div>
+)}
         </div>
 
         <button
@@ -1002,6 +1020,7 @@ const toggleStatus = async () => {
           <span>📥 Otrzymane</span>
           <Badge count={received.length} />
         </button>
+
         {openSections.otrzymane && renderTasks(received, "received")}
 
         <button
@@ -1011,6 +1030,7 @@ const toggleStatus = async () => {
           <span>📤 Wysłane</span>
           <Badge count={sent.length} />
         </button>
+
         {openSections.wysłane && renderTasks(sent, "sent")}
 
         <button
@@ -1025,11 +1045,13 @@ const toggleStatus = async () => {
             <div className="mb-2 mt-3 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
               Otrzymane
             </div>
+
             {renderTasks(archivedReceived, "archived")}
 
             <div className="mb-2 mt-4 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
               Wysłane
             </div>
+
             {renderTasks(archivedSent, "archived")}
           </>
         )}
