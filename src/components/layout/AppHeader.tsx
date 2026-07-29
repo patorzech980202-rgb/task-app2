@@ -71,29 +71,35 @@ export default function AppHeader({
             : "🟢 Na stanowisku"}
         </button>
 
-        {profile.department_id === 1 &&
-          profile.current_area_ids &&
-          profile.current_area_ids.length > 0 && (
-            <div className="rounded-2xl bg-white/10 p-3">
-              <div className="flex flex-wrap gap-2">
-                {profile.current_area_ids.map((id) => (
-                  <span
-                    key={id}
-                    className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white"
-                  >
-                    📍 {getAreaName(id)}
-                  </span>
-                ))}
-              </div>
+        {profile.department_id === 1 && (
+  <div className="rounded-2xl bg-white/10 p-3">
+    {profile.current_area_ids && profile.current_area_ids.length > 0 ? (
+      <div className="flex flex-wrap gap-2">
+        {profile.current_area_ids.map((id) => (
+          <span
+            key={id}
+            className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white"
+          >
+            📍 {getAreaName(id)}
+          </span>
+        ))}
+      </div>
+    ) : (
+      <p className="text-xs text-stone-300">
+        Nie wybrano jeszcze piętra
+      </p>
+    )}
 
-              <button
-                onClick={() => setShowAreaPicker(true)}
-                className="mt-3 w-full rounded-2xl bg-white py-2 text-xs font-semibold text-stone-900"
-              >
-                Wybierz piętro
-              </button>
-            </div>
-          )}
+    <button
+      onClick={() => setShowAreaPicker(true)}
+      className="mt-3 w-full rounded-2xl bg-white py-2 text-xs font-semibold text-stone-900"
+    >
+      {profile.current_area_ids && profile.current_area_ids.length > 0
+        ? "Zmień piętro"
+        : "Wybierz piętro"}
+    </button>
+  </div>
+)}
 
         <button
           onClick={enablePush}
