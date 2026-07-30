@@ -6,7 +6,7 @@ type Profile = {
   name: string
   department_id: number
   status: Status
-  role: "pracownik" | "kierownik" | "administrator"
+  role: "pracownik" | "kierownik_hotelu" | "kierownik" | "administrator"
   current_area_ids: number[] | null
 }
 
