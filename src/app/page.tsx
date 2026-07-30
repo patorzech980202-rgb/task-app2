@@ -967,6 +967,21 @@ return (
   <option value={3}>RECEPCJA</option>
 </select>
 
+{selectedDepartment === 1 && (
+  <select
+    className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+    value={selectedRecipientType}
+    onChange={(e) =>
+      setSelectedRecipientType(
+        e.target.value as "team" | "hotel_manager"
+      )
+    }
+  >
+    <option value="team">Zespół pokojowych</option>
+    <option value="hotel_manager">Kierowniczka pokojowych</option>
+  </select>
+)}
+
     {/* 3. OBSZAR - tylko dla pokojowych */}
     {selectedDepartment === 1 &&
   selectedRecipientType === "team" && (
