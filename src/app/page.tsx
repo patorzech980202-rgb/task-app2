@@ -953,15 +953,18 @@ return (
 
     {/* 2. DZIAŁ */}
     <select
-      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-      value={selectedDepartment}
-      onChange={(e) => {
-        setSelectedDepartment(Number(e.target.value))
-        setSelectedArea(null)
-      }}
-    >
-    
-    </select>
+  className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+  value={selectedDepartment}
+  onChange={(e) => {
+    setSelectedDepartment(Number(e.target.value))
+    setSelectedArea(null)
+  }}
+>
+  <option value={1}>POKOJOWE</option>
+  <option value={2}>KONSERWATORZY</option>
+  <option value={3}>RECEPCJA</option>
+  <option value={101}>MANAGER POKOJOWYCH</option>
+</select>
 
     {/* 3. OBSZAR - tylko dla pokojowych */}
     {selectedDepartment === 1 && (
