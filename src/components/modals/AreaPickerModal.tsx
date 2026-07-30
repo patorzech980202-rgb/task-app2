@@ -14,7 +14,7 @@ type Profile = {
   department_id: number
   hotel_id: number
   status: Status
-  role: "pracownik" | "kierownik" | "administrator"
+  role: "pracownik" | "kierownik_hotelu" | "kierownik" | "administrator"
   current_area_id: number | null
   current_area_ids: number[] | null
 }

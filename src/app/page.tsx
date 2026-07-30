@@ -57,7 +57,7 @@ type Profile = {
   department_id: number
   hotel_id: number
   status: Status
-  role: "pracownik" | "kierownik" | "administrator"
+  role: "pracownik" | "kierownik_hotelu" | "kierownik" | "administrator"
   push_token?: string | null
   current_area_id: number | null
   current_area_ids: number[] | null
@@ -82,6 +82,7 @@ export default function Home() {
     { id: 1, name: "POKOJOWE" },
     { id: 2, name: "KONSERWATORZY" },
     { id: 3, name: "RECEPCJA" },
+    { id: 101, name: "MANAGER POKOJOWYCH" },
   ]
 
   const hotels = [
@@ -285,11 +286,17 @@ const getAreaName = (areaId: number | null) => {
     setProfile(null)
   }
 
+  const isHotelManager = profile?.role === "kierownik_hotelu"
   const isManager = profile?.role === "kierownik"
   const isAdmin = profile?.role === "administrator"
 
   const addTask = async () => {
     if (!newTask.trim() || !profile) return
+
+    const isHousekeepingManagerTarget = selectedDepartment === 101
+    const targetDepartment = isHousekeepingManagerTarget
+      ? 1
+      : selectedDepartment
 
     if (selectedDepartment === 1 && selectedArea === null) {
   alert("Wybierz obszar dla zadania pokojowych.")
@@ -297,9 +304,9 @@ const getAreaName = (areaId: number | null) => {
     }
 
     const { data: candidates, error: candidatesError } = await supabase
-      .from("profiles")
+     .from("profiles")
       .select("*")
-      .eq("department_id", selectedDepartment)
+      .eq("department_id", targetDepartment)
 
     console.log("candidates:", candidates)
     console.log("candidatesError:", candidatesError)
@@ -309,9 +316,15 @@ const getAreaName = (areaId: number | null) => {
       return
     }
 
-    const targets = (candidates || []).filter(
-      (p: Profile) => p.status === "na stanowisku"
-    )
+    const targets = (candidates || []).filter((p: Profile) => {
+  if (p.status !== "na stanowisku") return false
+
+  if (isHousekeepingManagerTarget) {
+    return p.role === "kierownik"
+  }
+
+  return p.role === "pracownik"
+})
 
     console.log("targets:", targets)
 
@@ -323,10 +336,20 @@ const getAreaName = (areaId: number | null) => {
       {
         title: newTask,
         authorId: profile.id,
-        assigneeId: null,
-        departmentId: selectedDepartment,
-        hotel_id: isManager || isAdmin ? selectedHotel : profile.hotel_id,
-        area_id: selectedDepartment === 1 ? selectedArea : null,
+        assigneeId: isHousekeepingManagerTarget
+        ? targets[0]?.id || null
+        : null,
+
+        departmentId: targetDepartment,
+
+        hotel_id: isManager || isAdmin
+       ? selectedHotel
+        : profile.hotel_id,
+
+        area_id:
+        !isHousekeepingManagerTarget && selectedDepartment === 1
+        ? selectedArea
+       : null,
         done: false,
         completedBy: null,
         archivedBy: [],
@@ -561,6 +584,17 @@ const toggleStatus = async () => {
       )
     }
 
+    if (isHotelManager) {
+  return (
+    t.hotel_id === profile.hotel_id &&
+    t.departmentId === profile.department_id &&
+    profile.status === "na stanowisku" &&
+    notAuthor &&
+    notArchived &&
+    !t.done
+  )
+}
+
   const generalAreaId = getGeneralAreaId(profile.hotel_id)
 
 const areaMatches =
@@ -585,6 +619,10 @@ return (
 
     const notArchived = !t.archivedBy?.includes(profile.id)
 
+    const authorProfile = profiles.find(
+    (p) => p.id === t.authorId
+    )
+
     if (isAdmin) {
       return notArchived
     }
@@ -596,6 +634,16 @@ return (
     notArchived
   )
     }
+
+    if (isHotelManager) {
+  return (
+    authorProfile?.hotel_id === profile.hotel_id &&
+    authorProfile?.department_id === profile.department_id &&
+    profile.status === "na stanowisku" &&
+    notArchived &&
+    !t.done
+  )
+}
 
     return t.authorId === profile.id && notArchived
   })
@@ -912,11 +960,7 @@ return (
         setSelectedArea(null)
       }}
     >
-      {departments.map((d) => (
-        <option key={d.id} value={d.id}>
-          {d.name}
-        </option>
-      ))}
+    
     </select>
 
     {/* 3. OBSZAR - tylko dla pokojowych */}
