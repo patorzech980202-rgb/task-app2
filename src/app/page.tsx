@@ -1,230 +1,239 @@
-"use client"
+"use client";
 
-import { useEffect, useRef, useState } from "react"
-import { supabase } from "../../lib/supabase"
-import AppHeader from "../components/layout/AppHeader"
-import AreaPickerModal from "../components/modals/AreaPickerModal"
-import ImagePreviewModal from "../components/modals/ImagePreviewModal"
-import MediaGallery from "../components/tasks/MediaGallery"
+import { useEffect, useRef, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import AppHeader from "../components/layout/AppHeader";
+import AreaPickerModal from "../components/modals/AreaPickerModal";
+import ImagePreviewModal from "../components/modals/ImagePreviewModal";
+import MediaGallery from "../components/tasks/MediaGallery";
 
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
-  const rawData = window.atob(base64)
-  const outputArray = new Uint8Array(rawData.length)
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
 
   for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i)
+    outputArray[i] = rawData.charCodeAt(i);
   }
 
-  return outputArray
+  return outputArray;
 }
 
 type Task = {
-  id: number
-  title: string
-  authorId: string
-  assigneeId: string | null
-  departmentId: number
-  hotel_id: number | null
-  done: boolean
-  completedBy: string | null
-  completedAt: string | null
-  createdAt: string
-  archivedBy: string[]
-  area_id: number | null
-}
+  id: number;
+  title: string;
+  authorId: string;
+  assigneeId: string | null;
+  departmentId: number;
+  hotel_id: number | null;
+  done: boolean;
+  completedBy: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  archivedBy: string[];
+  area_id: number | null;
+};
 
 type TaskImage = {
-  id: number
-  task_id: number
-  image_url: string
-  file_path?: string | null
-  file_type?: string | null
-}
+  id: number;
+  task_id: number;
+  image_url: string;
+  file_path?: string | null;
+  file_type?: string | null;
+};
 type Area = {
-  id: number
-  hotel_id: number
-  name: string
-}
+  id: number;
+  hotel_id: number;
+  name: string;
+};
 
-type Status = "na stanowisku" | "poza stanowiskiem"
+type Status = "na stanowisku" | "poza stanowiskiem";
 
 type Profile = {
-  id: string
-  name: string
-  surname?: string
-  department_id: number
-  hotel_id: number
-  status: Status
-  role: "pracownik" | "kierownik_hotelu" | "kierownik" | "administrator"
-  push_token?: string | null
-  current_area_id: number | null
-  current_area_ids: number[] | null
-}
+  id: string;
+  name: string;
+  surname?: string;
+  department_id: number;
+  hotel_id: number;
+  status: Status;
+  role: "pracownik" | "kierownik_hotelu" | "kierownik" | "administrator";
+  push_token?: string | null;
+  current_area_id: number | null;
+  current_area_ids: number[] | null;
+};
 
-type SectionKey = "otrzymane" | "wysłane" | "archiwum"
+type SectionKey = "otrzymane" | "wysłane" | "archiwum";
 
 export default function Home() {
-  const [selectedDepartment, setSelectedDepartment] = useState(1)
-  const [selectedRecipientType, setSelectedRecipientType] =
-  useState<"team" | "hotel_manager">("team")
-  const [selectedArea, setSelectedArea] = useState<number | null>(null)
-  const [selectedHotel, setSelectedHotel] = useState(1)
-  const [filterHotel, setFilterHotel] = useState(0)
-  const [showForm, setShowForm] = useState(false)
-  const [showAreaPicker, setShowAreaPicker] = useState(false)
+  const [selectedTargetType, setSelectedTargetType] = useState<
+    "department" | "housekeeping_manager"
+  >("department");
+  const [selectedDepartment, setSelectedDepartment] = useState(1);
+  const [selectedRecipientType, setSelectedRecipientType] = useState<
+    "team" | "hotel_manager"
+  >("team");
+  const [selectedArea, setSelectedArea] = useState<number | null>(null);
+  const [selectedHotel, setSelectedHotel] = useState(1);
+  const [filterHotel, setFilterHotel] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [showAreaPicker, setShowAreaPicker] = useState(false);
   const [openSections, setOpenSections] = useState({
     otrzymane: true,
     wysłane: false,
     archiwum: false,
-  })
+  });
 
   const departments = [
     { id: 1, name: "POKOJOWE" },
     { id: 2, name: "KONSERWATORZY" },
     { id: 3, name: "RECEPCJA" },
-  ]
+  ];
 
   const hotels = [
     { id: 1, name: "Olimp 1" },
     { id: 2, name: "Olimp 2" },
     { id: 3, name: "Olimp 3" },
     { id: 4, name: "Olimp 4" },
-  ]
+  ];
 
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [taskImages, setTaskImages] = useState<TaskImage[]>([])
-  const [signedImageUrls, setSignedImageUrls] = useState<Record<number, string>>({})
-  const [profiles, setProfiles] = useState<Profile[]>([])
-  const [areas, setAreas] = useState<Area[]>([])
-  const [newTask, setNewTask] = useState("")
-  const [selectedAttachments, setSelectedAttachments] = useState<File[]>([])
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
-  const [previewImages, setPreviewImages] = useState<string[]>([])
-  const [previewIndex, setPreviewIndex] = useState(0)
-  const touchStartX = useRef<number | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskImages, setTaskImages] = useState<TaskImage[]>([]);
+  const [signedImageUrls, setSignedImageUrls] = useState<
+    Record<number, string>
+  >({});
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [newTask, setNewTask] = useState("");
+  const [selectedAttachments, setSelectedAttachments] = useState<File[]>([]);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewImages, setPreviewImages] = useState<string[]>([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const getHotelName = (hotelId: number | null) => {
-    return hotels.find((h) => h.id === hotelId)?.name || "Brak hotelu"
-  }
-const getAreasForHotel = (hotelId: number | null) => {
-  if (!hotelId) return []
+    return hotels.find((h) => h.id === hotelId)?.name || "Brak hotelu";
+  };
+  const getAreasForHotel = (hotelId: number | null) => {
+    if (!hotelId) return [];
 
-  return areas.filter((area) => area.hotel_id === hotelId)
-}
+    return areas.filter((area) => area.hotel_id === hotelId);
+  };
 
-const getGeneralAreaId = (hotelId: number | null) => {
-  return getAreasForHotel(hotelId).find((area) => area.name === "Ogólne")?.id || null
-}
+  const getGeneralAreaId = (hotelId: number | null) => {
+    return (
+      getAreasForHotel(hotelId).find((area) => area.name === "Ogólne")?.id ||
+      null
+    );
+  };
 
-const getAreaName = (areaId: number | null) => {
-  if (!areaId) return "Bez obszaru"
+  const getAreaName = (areaId: number | null) => {
+    if (!areaId) return "Bez obszaru";
 
-  return areas.find((area) => area.id === areaId)?.name || "Bez obszaru"
-}
+    return areas.find((area) => area.id === areaId)?.name || "Bez obszaru";
+  };
   const getProfileName = (profileId: string | null) => {
-    if (!profileId) return "Nieznany pracownik"
+    if (!profileId) return "Nieznany pracownik";
 
-    const user = profiles.find((p) => p.id === profileId)
+    const user = profiles.find((p) => p.id === profileId);
 
-    if (!user) return "Nieznany pracownik"
+    if (!user) return "Nieznany pracownik";
 
-    return `${user.name}${user.surname ? " " + user.surname : ""}`
-  }
+    return `${user.name}${user.surname ? " " + user.surname : ""}`;
+  };
 
   const getTaskImages = (taskId: number) => {
-    return taskImages.filter((img) => img.task_id === taskId)
-  }
+    return taskImages.filter((img) => img.task_id === taskId);
+  };
 
   const loadSignedImageUrls = async (images: TaskImage[]) => {
-    const urls: Record<number, string> = {}
+    const urls: Record<number, string> = {};
 
     for (const img of images) {
       if (!img.file_path) {
-        urls[img.id] = img.image_url
-        continue
+        urls[img.id] = img.image_url;
+        continue;
       }
 
       const { data, error } = await supabase.storage
         .from("task-images")
-        .createSignedUrl(img.file_path, 3600)
+        .createSignedUrl(img.file_path, 3600);
 
       if (!error && data?.signedUrl) {
-        urls[img.id] = data.signedUrl
+        urls[img.id] = data.signedUrl;
       } else {
-        urls[img.id] = img.image_url
+        urls[img.id] = img.image_url;
       }
     }
 
-    setSignedImageUrls(urls)
-  }
+    setSignedImageUrls(urls);
+  };
 
   const refreshTaskImages = async () => {
-    const { data: images } = await supabase.from("task_images").select("*")
-    setTaskImages(images || [])
-    await loadSignedImageUrls(images || [])
-  }
+    const { data: images } = await supabase.from("task_images").select("*");
+    setTaskImages(images || []);
+    await loadSignedImageUrls(images || []);
+  };
 
   const toggleSection = (key: SectionKey) => {
     setOpenSections((prev) => ({
       ...prev,
       [key]: !prev[key],
-    }))
-  }
+    }));
+  };
 
   const playSound = () => {
-    const audio = new Audio("/notify.mp3")
-    audio.volume = 0.6
-    audio.play().catch(() => {})
-  }
+    const audio = new Audio("/notify.mp3");
+    audio.volume = 0.6;
+    audio.play().catch(() => {});
+  };
 
   const vibrate = () => {
     if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200])
+      navigator.vibrate([200, 100, 200]);
     }
-  }
+  };
 
   useEffect(() => {
     const load = async () => {
-      const { data: auth } = await supabase.auth.getUser()
+      const { data: auth } = await supabase.auth.getUser();
 
       if (!auth.user) {
-        setLoading(false)
-        return
+        setLoading(false);
+        return;
       }
 
       const { data: prof } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", auth.user.id)
-        .single()
+        .single();
 
-      setProfile(prof || null)
+      setProfile(prof || null);
 
-      const { data } = await supabase.from("tasks").select("*")
-      setTasks(data || [])
+      const { data } = await supabase.from("tasks").select("*");
+      setTasks(data || []);
 
-      await refreshTaskImages()
+      await refreshTaskImages();
 
-      const { data: allProfiles } = await supabase.from("profiles").select("*")
-      setProfiles(allProfiles || [])
-     
-      const { data: allAreas } = await supabase.from("areas").select("*")
-      setAreas(allAreas || [])
-       setLoading(false)
-    }
+      const { data: allProfiles } = await supabase.from("profiles").select("*");
+      setProfiles(allProfiles || []);
 
-    load()
-  }, [])
+      const { data: allAreas } = await supabase.from("areas").select("*");
+      setAreas(allAreas || []);
+      setLoading(false);
+    };
+
+    load();
+  }, []);
 
   useEffect(() => {
-    if (!profile) return
+    if (!profile) return;
 
     const channel = supabase
       .channel("tasks-live")
@@ -232,179 +241,204 @@ const getAreaName = (areaId: number | null) => {
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
         (payload) => {
-          const newRow = payload.new as Task
-          const oldRow = payload.old as Task
+          const newRow = payload.new as Task;
+          const oldRow = payload.old as Task;
 
           setTasks((prev) => {
             if (payload.eventType === "INSERT") {
               if (newRow.assigneeId === profile.id) {
-                playSound()
-                vibrate()
+                playSound();
+                vibrate();
               }
 
               setTimeout(() => {
-                refreshTaskImages()
-              }, 1500)
+                refreshTaskImages();
+              }, 1500);
 
-              return [...prev, newRow]
+              return [...prev, newRow];
             }
 
             if (payload.eventType === "UPDATE") {
-              return prev.map((t) => (t.id === newRow.id ? newRow : t))
+              return prev.map((t) => (t.id === newRow.id ? newRow : t));
             }
 
             if (payload.eventType === "DELETE") {
-              return prev.filter((t) => t.id !== oldRow.id)
+              return prev.filter((t) => t.id !== oldRow.id);
             }
 
-            return prev
-          })
-        }
+            return prev;
+          });
+        },
       )
-      .subscribe()
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [profile])
+      supabase.removeChannel(channel);
+    };
+  }, [profile]);
 
   const signIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
-    })
+    });
 
     if (error) {
-      alert("Błąd logowania: " + error.message)
-      return
+      alert("Błąd logowania: " + error.message);
+      return;
     }
 
-    window.location.reload()
-  }
+    window.location.reload();
+  };
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    setProfile(null)
-  }
+    await supabase.auth.signOut();
+    setProfile(null);
+  };
 
-  const isHotelManager = profile?.role === "kierownik_hotelu"
-  const isManager = profile?.role === "kierownik"
-  const isAdmin = profile?.role === "administrator"
+  const isHotelManager = profile?.role === "kierownik_hotelu";
+  const isManager = profile?.role === "kierownik";
+  const isAdmin = profile?.role === "administrator";
 
   const addTask = async () => {
-    if (!newTask.trim() || !profile) return
+    if (!newTask.trim() || !profile) return;
 
-    const isHousekeepingManagerTarget = selectedDepartment === 101
+    const targetHotelId =
+      isManager || isAdmin ? selectedHotel : profile.hotel_id;
+    const isHousekeepingManagerTarget =
+      selectedTargetType === "housekeeping_manager";
+    const isHotelManagerTarget =
+      selectedTargetType === "department" &&
+      selectedDepartment === 1 &&
+      selectedRecipientType === "hotel_manager";
+    const isHousekeepingTeamTarget =
+      selectedTargetType === "department" &&
+      selectedDepartment === 1 &&
+      selectedRecipientType === "team";
     const targetDepartment = isHousekeepingManagerTarget
       ? 1
-      : selectedDepartment
+      : selectedDepartment;
 
-    if (selectedDepartment === 1 && selectedArea === null) {
-  alert("Wybierz obszar dla zadania pokojowych.")
-  return
+    if (isHousekeepingTeamTarget && selectedArea === null) {
+      alert("Wybierz obszar dla zadania pokojowych.");
+      return;
     }
 
     const { data: candidates, error: candidatesError } = await supabase
-     .from("profiles")
+      .from("profiles")
       .select("*")
-      .eq("department_id", targetDepartment)
-
-    console.log("candidates:", candidates)
-    console.log("candidatesError:", candidatesError)
+      .eq("department_id", targetDepartment);
 
     if (candidatesError) {
-      alert("Błąd pobierania pracowników: " + candidatesError.message)
-      return
+      alert("Błąd pobierania pracowników: " + candidatesError.message);
+      return;
     }
 
     const targets = (candidates || []).filter((p: Profile) => {
-  if (p.status !== "na stanowisku") return false
+      if (isHousekeepingManagerTarget) {
+        return p.role === "kierownik";
+      }
 
-  if (isHousekeepingManagerTarget) {
-    return p.role === "kierownik"
-  }
+      if (isHotelManagerTarget) {
+        return p.role === "kierownik_hotelu" && p.hotel_id === targetHotelId;
+      }
 
-  return p.role === "pracownik"
-})
+      return (
+        p.role === "pracownik" &&
+        p.hotel_id === targetHotelId &&
+        p.status === "na stanowisku"
+      );
+    });
 
-    console.log("targets:", targets)
-
-    if (targets.length === 0) {
-      console.log("Brak pracowników w tym dziale, ale task zostanie zapisany jako działowy.")
+    if (
+      (isHousekeepingManagerTarget || isHotelManagerTarget) &&
+      targets.length === 0
+    ) {
+      alert(
+        isHousekeepingManagerTarget
+          ? "Nie znaleziono konta Managera pokojowych."
+          : "Nie znaleziono kierowniczki pokojowych dla wybranego hotelu.",
+      );
+      return;
     }
+
+    if (
+      (isHousekeepingManagerTarget || isHotelManagerTarget) &&
+      targets.length > 1
+    ) {
+      alert(
+        isHousekeepingManagerTarget
+          ? "Znaleziono więcej niż jednego Managera pokojowych. Sprawdź role kont w Supabase."
+          : "Znaleziono więcej niż jedną kierowniczkę pokojowych dla tego hotelu. Sprawdź role kont w Supabase.",
+      );
+      return;
+    }
+
+    const directAssignee =
+      isHousekeepingManagerTarget || isHotelManagerTarget ? targets[0] : null;
 
     const rows = [
       {
         title: newTask,
         authorId: profile.id,
-        assigneeId: isHousekeepingManagerTarget
-        ? targets[0]?.id || null
-        : null,
-
+        assigneeId: directAssignee?.id || null,
         departmentId: targetDepartment,
-
-        hotel_id: isManager || isAdmin
-       ? selectedHotel
-        : profile.hotel_id,
-
-        area_id:
-        !isHousekeepingManagerTarget && selectedDepartment === 1
-        ? selectedArea
-       : null,
+        hotel_id: targetHotelId,
+        area_id: isHousekeepingTeamTarget ? selectedArea : null,
         done: false,
         completedBy: null,
         archivedBy: [],
         createdAt: new Date().toISOString(),
         completedAt: null,
       },
-    ]
+    ];
 
-    console.log("rows:", rows)
+    console.log("rows:", rows);
 
-    const { data, error } = await supabase.from("tasks").insert(rows).select()
+    const { data, error } = await supabase.from("tasks").insert(rows).select();
 
-    console.log("insert data:", data)
-    console.log("insert error:", error)
+    console.log("insert data:", data);
+    console.log("insert error:", error);
 
     if (error) {
-      alert("Błąd zapisu taska: " + error.message)
-      return
+      alert("Błąd zapisu taska: " + error.message);
+      return;
     }
 
-    const createdTask = data?.[0]
+    const createdTask = data?.[0];
 
     if (createdTask && selectedAttachments.length > 0) {
       for (const file of selectedAttachments) {
-        const fileExt = file.name.split(".").pop()
-        const fileName = `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`
-        const filePath = `tasks/${createdTask.id}/${fileName}`
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
+        const filePath = `tasks/${createdTask.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from("task-images")
           .upload(filePath, file, {
             contentType: file.type,
-          })
+          });
 
         if (uploadError) {
-          console.error("uploadError:", uploadError)
-          alert("Nie udało się wysłać pliku: " + uploadError.message)
-          continue
+          console.error("uploadError:", uploadError);
+          alert("Nie udało się wysłać pliku: " + uploadError.message);
+          continue;
         }
 
         const { data: publicUrlData } = supabase.storage
           .from("task-images")
-          .getPublicUrl(filePath)
+          .getPublicUrl(filePath);
 
         await supabase.from("task_images").insert({
           task_id: createdTask.id,
           image_url: publicUrlData.publicUrl,
           file_path: filePath,
           file_type: file.type,
-        })
+        });
       }
     }
 
-    await refreshTaskImages()
+    await refreshTaskImages();
 
     for (const target of targets) {
       const res = await fetch(
@@ -419,23 +453,26 @@ const getAreaName = (areaId: number | null) => {
             title: "Nowe zadanie",
             body: newTask,
           }),
-        }
-      )
+        },
+      );
 
-      console.log("push response status:", res.status)
+      console.log("push response status:", res.status);
 
-      const responseText = await res.text()
+      const responseText = await res.text();
 
-      console.log("push response body:", responseText)
+      console.log("push response body:", responseText);
     }
 
-    setNewTask("")
-    setSelectedAttachments([])
-    setShowForm(false)
-  }
+    setNewTask("");
+    setSelectedAttachments([]);
+    setSelectedTargetType("department");
+    setSelectedRecipientType("team");
+    setSelectedArea(null);
+    setShowForm(false);
+  };
 
   const markDone = async (id: number) => {
-    if (!profile) return
+    if (!profile) return;
 
     await supabase
       .from("tasks")
@@ -444,126 +481,126 @@ const getAreaName = (areaId: number | null) => {
         completedBy: profile.id,
         completedAt: new Date().toISOString(),
       })
-      .eq("id", id)
-  }
+      .eq("id", id);
+  };
 
   const archiveTask = async (id: number) => {
-    const task = tasks.find((t) => t.id === id)
-    if (!task || !profile) return
+    const task = tasks.find((t) => t.id === id);
+    if (!task || !profile) return;
 
     await supabase
       .from("tasks")
       .update({
         archivedBy: [...(task.archivedBy || []), profile.id],
       })
-      .eq("id", id)
-  }
+      .eq("id", id);
+  };
 
-const toggleStatus = async () => {
-  if (!profile) return
+  const toggleStatus = async () => {
+    if (!profile) return;
 
-  const newStatus: Status =
-    profile.status === "na stanowisku"
-      ? "poza stanowiskiem"
-      : "na stanowisku"
+    const newStatus: Status =
+      profile.status === "na stanowisku"
+        ? "poza stanowiskiem"
+        : "na stanowisku";
 
-  await supabase
-    .from("profiles")
-    .update({
+    await supabase
+      .from("profiles")
+      .update({
+        status: newStatus,
+      })
+      .eq("id", profile.id);
+
+    setProfile({
+      ...profile,
       status: newStatus,
-    })
-    .eq("id", profile.id)
-
-  setProfile({
-    ...profile,
-    status: newStatus,
-  })
-}
+    });
+  };
   const enablePush = async () => {
     try {
       if (!("serviceWorker" in navigator)) {
-        alert("Ta przeglądarka nie obsługuje Service Workera")
-        return
+        alert("Ta przeglądarka nie obsługuje Service Workera");
+        return;
       }
 
       if (!("PushManager" in window)) {
-        alert("Ta przeglądarka nie obsługuje powiadomień push")
-        return
+        alert("Ta przeglądarka nie obsługuje powiadomień push");
+        return;
       }
 
-      const permission = await Notification.requestPermission()
+      const permission = await Notification.requestPermission();
 
       if (permission !== "granted") {
-        alert("Brak zgody na powiadomienia")
-        return
+        alert("Brak zgody na powiadomienia");
+        return;
       }
 
-      const registration = await navigator.serviceWorker.register("/sw.js")
-      await navigator.serviceWorker.ready
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
 
-      const oldSubscription = await registration.pushManager.getSubscription()
+      const oldSubscription = await registration.pushManager.getSubscription();
 
       if (oldSubscription) {
-        await oldSubscription.unsubscribe()
+        await oldSubscription.unsubscribe();
       }
 
-      const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
-      console.log("FRONT vapid public length:", publicKey?.length)
-      console.log("FRONT vapid public first chars:", publicKey?.slice(0, 12))
+      console.log("FRONT vapid public length:", publicKey?.length);
+      console.log("FRONT vapid public first chars:", publicKey?.slice(0, 12));
 
       if (!publicKey) {
-        alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY")
-        return
+        alert("Brak NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        return;
       }
 
-      let subscription
+      let subscription;
 
       try {
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey),
-        })
+        });
 
-        alert("Subskrypcja utworzona")
+        alert("Subskrypcja utworzona");
       } catch (err) {
-        alert("Błąd subscribe: " + String(err))
-        console.error(err)
-        return
+        alert("Błąd subscribe: " + String(err));
+        console.error(err);
+        return;
       }
 
-      console.log("subscription:", subscription)
+      console.log("subscription:", subscription);
 
-      const { data: auth } = await supabase.auth.getUser()
+      const { data: auth } = await supabase.auth.getUser();
 
       if (!auth.user) {
-        alert("Musisz być zalogowany")
-        return
+        alert("Musisz być zalogowany");
+        return;
       }
 
       const { error } = await supabase.from("push_subscriptions").insert({
         user_id: auth.user.id,
         subscription: JSON.parse(JSON.stringify(subscription)),
-      })
+      });
 
       if (error) {
-        console.error("push subscription insert error:", error)
-        alert("Nie udało się zapisać subskrypcji: " + error.message)
-        return
+        console.error("push subscription insert error:", error);
+        alert("Nie udało się zapisać subskrypcji: " + error.message);
+        return;
       }
 
-      alert("Powiadomienia aktywne 🔔")
+      alert("Powiadomienia aktywne 🔔");
     } catch (err) {
-      console.error("enablePush error:", err)
-      alert("Błąd Push ON: " + String(err))
+      console.error("enablePush error:", err);
+      alert("Błąd Push ON: " + String(err));
     }
-  }
+  };
 
   const received = tasks.filter((t) => {
-    if (!profile) return false
+    if (!profile) return false;
 
-    const notArchived = !t.archivedBy?.includes(profile.id)
-    const notAuthor = t.authorId !== profile.id
+    const notArchived = !t.archivedBy?.includes(profile.id);
+    const notAuthor = t.authorId !== profile.id;
 
     if (isAdmin) {
       return (
@@ -572,7 +609,7 @@ const toggleStatus = async () => {
         profile.status === "na stanowisku" &&
         !t.done &&
         (filterHotel === 0 || t.hotel_id === filterHotel)
-      )
+      );
     }
 
     if (isManager) {
@@ -582,122 +619,131 @@ const toggleStatus = async () => {
         notAuthor &&
         notArchived &&
         !t.done
-      )
+      );
     }
 
     if (isHotelManager) {
-  return (
-    t.hotel_id === profile.hotel_id &&
-    t.departmentId === profile.department_id &&
-    profile.status === "na stanowisku" &&
-    notAuthor &&
-    notArchived &&
-    !t.done
-  )
-}
+      const addressedToMe =
+        t.assigneeId === null || t.assigneeId === profile.id;
 
-  const generalAreaId = getGeneralAreaId(profile.hotel_id)
-
-const areaMatches =
-  profile.department_id !== 1 ||
-  t.area_id === generalAreaId ||
-  (t.area_id !== null &&
-    profile.current_area_ids?.includes(t.area_id))
-
-return (
-  t.hotel_id === profile.hotel_id &&
-  t.departmentId === profile.department_id &&
-  areaMatches &&
-  notAuthor &&
-  profile.status === "na stanowisku" &&
-  notArchived &&
-  !t.done
-)
-  })
-
-  const sent = tasks.filter((t) => {
-    if (!profile) return false
-
-    const notArchived = !t.archivedBy?.includes(profile.id)
-
-    const authorProfile = profiles.find(
-    (p) => p.id === t.authorId
-    )
-
-    if (isAdmin) {
-      return notArchived
+      return (
+        t.hotel_id === profile.hotel_id &&
+        t.departmentId === profile.department_id &&
+        addressedToMe &&
+        profile.status === "na stanowisku" &&
+        notAuthor &&
+        notArchived &&
+        !t.done
+      );
     }
 
-    if (isManager) {
-  return (
-    t.departmentId === profile.department_id &&
-    (filterHotel === 0 || t.hotel_id === filterHotel) &&
-    notArchived
-  )
-    }
+    const generalAreaId = getGeneralAreaId(profile.hotel_id);
 
-    if (isHotelManager) {
-  return (
-    authorProfile?.hotel_id === profile.hotel_id &&
-    authorProfile?.department_id === profile.department_id &&
-    profile.status === "na stanowisku" &&
-    notArchived &&
-    !t.done
-  )
-}
+    const areaMatches =
+      profile.department_id !== 1 ||
+      t.area_id === generalAreaId ||
+      (t.area_id !== null && profile.current_area_ids?.includes(t.area_id));
 
-    return t.authorId === profile.id && notArchived
-  })
-
-  const archivedReceived = tasks.filter((t) => {
-    if (!profile) return false
-
-    if (isAdmin) {
-      return t.done
-    }
-
-    if (isManager) {
-  return (
-    t.departmentId === profile.department_id &&
-    (filterHotel === 0 || t.hotel_id === filterHotel) &&
-    t.done
-  )
-}
+    const addressedToMe = t.assigneeId === null || t.assigneeId === profile.id;
 
     return (
       t.hotel_id === profile.hotel_id &&
       t.departmentId === profile.department_id &&
-      t.archivedBy?.includes(profile.id)
-    )
-  })
+      addressedToMe &&
+      areaMatches &&
+      notAuthor &&
+      profile.status === "na stanowisku" &&
+      notArchived &&
+      !t.done
+    );
+  });
 
-  const archivedSent = tasks.filter((t) => {
-    if (!profile) return false
+  const sent = tasks.filter((t) => {
+    if (!profile) return false;
+
+    const notArchived = !t.archivedBy?.includes(profile.id);
+
+    const authorProfile = profiles.find((p) => p.id === t.authorId);
 
     if (isAdmin) {
-      return t.done
+      return notArchived;
     }
 
     if (isManager) {
-  return (
-    t.departmentId === profile.department_id &&
-    (filterHotel === 0 || t.hotel_id === filterHotel) &&
-    t.done
-  )
-}
+      return (
+        authorProfile?.department_id === profile.department_id &&
+        (filterHotel === 0 || t.hotel_id === filterHotel) &&
+        notArchived
+      );
+    }
 
-    return t.authorId === profile.id && t.archivedBy?.includes(profile.id)
-  })
+    if (isHotelManager) {
+      return (
+        authorProfile?.hotel_id === profile.hotel_id &&
+        authorProfile?.department_id === profile.department_id &&
+        profile.status === "na stanowisku" &&
+        notArchived &&
+        !t.done
+      );
+    }
+
+    return t.authorId === profile.id && notArchived;
+  });
+
+  const archivedReceived = tasks.filter((t) => {
+    if (!profile) return false;
+
+    if (isAdmin) {
+      return t.done;
+    }
+
+    if (isManager) {
+      return (
+        t.departmentId === profile.department_id &&
+        (filterHotel === 0 || t.hotel_id === filterHotel) &&
+        t.done
+      );
+    }
+
+    const addressedToMe = t.assigneeId === null || t.assigneeId === profile.id;
+
+    return (
+      t.hotel_id === profile.hotel_id &&
+      t.departmentId === profile.department_id &&
+      addressedToMe &&
+      t.archivedBy?.includes(profile.id)
+    );
+  });
+
+  const archivedSent = tasks.filter((t) => {
+    if (!profile) return false;
+
+    const authorProfile = profiles.find((p) => p.id === t.authorId);
+
+    if (isAdmin) {
+      return t.done;
+    }
+
+    if (isManager) {
+      return (
+        authorProfile?.department_id === profile.department_id &&
+        (filterHotel === 0 || t.hotel_id === filterHotel) &&
+        t.done
+      );
+    }
+
+    return t.authorId === profile.id && t.archivedBy?.includes(profile.id);
+  });
 
   const Badge = ({ count }: { count: number }) => {
-    if (!count) return null
+    if (!count) return null;
 
     return (
       <span className="ml-2 inline-flex min-w-6 h-6 items-center justify-center rounded-full bg-red-500 px-2 text-xs font-bold text-white shadow-sm">
         {count}
       </span>
-    )
-  }
+    );
+  };
 
   const renderTasks = (list: Task[], mode: string) => {
     if (list.length === 0) {
@@ -705,23 +751,23 @@ return (
         <div className="mb-3 rounded-2xl border border-dashed border-stone-300 bg-white/60 p-4 text-center text-sm text-stone-500">
           Brak zadań w tej sekcji
         </div>
-      )
+      );
     }
 
     return list.map((t) => {
-      const attachments = getTaskImages(t.id)
+      const attachments = getTaskImages(t.id);
 
       const imagesOnly = attachments.filter(
-        (item) => !item.file_type || item.file_type.startsWith("image/")
-      )
+        (item) => !item.file_type || item.file_type.startsWith("image/"),
+      );
 
       const videosOnly = attachments.filter((item) =>
-        item.file_type?.startsWith("video/")
-      )
+        item.file_type?.startsWith("video/"),
+      );
 
       const allImageUrls = imagesOnly.map(
-        (item) => signedImageUrls[item.id] || item.image_url
-      )
+        (item) => signedImageUrls[item.id] || item.image_url,
+      );
 
       return (
         <div
@@ -757,19 +803,20 @@ return (
               </div>
 
               <MediaGallery
-  attachments={attachments}
-  signedImageUrls={signedImageUrls}
-  setPreviewImages={setPreviewImages}
-  setPreviewIndex={setPreviewIndex}
-  setPreviewImage={setPreviewImage}
-/>
+                attachments={attachments}
+                signedImageUrls={signedImageUrls}
+                setPreviewImages={setPreviewImages}
+                setPreviewIndex={setPreviewIndex}
+                setPreviewImage={setPreviewImage}
+              />
 
               {t.done && (
                 <div className="mt-2 text-xs text-stone-500">
                   👤 Wykonał: {getProfileName(t.completedBy)}
                   {t.completedAt && (
                     <span>
-                      {" "}•{" "}
+                      {" "}
+                      •{" "}
                       {new Date(t.completedAt).toLocaleString("pl-PL", {
                         timeZone: "Europe/Warsaw",
                         day: "2-digit",
@@ -816,16 +863,16 @@ return (
             )}
           </div>
         </div>
-      )
-    })
-  }
+      );
+    });
+  };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-blue-200 flex items-center justify-center p-6">
         Ładowanie...
       </div>
-    )
+    );
   }
 
   if (!profile) {
@@ -867,32 +914,31 @@ return (
           </div>
         </div>
       </div>
-    )
+    );
   }
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-blue-300 to-white flex items-center justify-center p-6">
       <div className="mx-auto w-full max-w-xl">
-
         {showAreaPicker && profile.department_id === 1 && (
-  <AreaPickerModal
-    profile={profile}
-    areas={areas}
-    setProfile={setProfile}
-    setShowAreaPicker={setShowAreaPicker}
-  />
-)}
+          <AreaPickerModal
+            profile={profile}
+            areas={areas}
+            setProfile={setProfile}
+            setShowAreaPicker={setShowAreaPicker}
+          />
+        )}
         {previewImage && (
-  <ImagePreviewModal
-    previewImage={previewImage}
-    previewImages={previewImages}
-    previewIndex={previewIndex}
-    setPreviewImage={setPreviewImage}
-    setPreviewImages={setPreviewImages}
-    setPreviewIndex={setPreviewIndex}
-    touchStartX={touchStartX}
-  />
-)}
-        
+          <ImagePreviewModal
+            previewImage={previewImage}
+            previewImages={previewImages}
+            previewIndex={previewIndex}
+            setPreviewImage={setPreviewImage}
+            setPreviewImages={setPreviewImages}
+            setPreviewIndex={setPreviewIndex}
+            touchStartX={touchStartX}
+          />
+        )}
+
         <AppHeader
           profile={profile}
           toggleStatus={toggleStatus}
@@ -900,7 +946,7 @@ return (
           signOut={signOut}
           setShowAreaPicker={setShowAreaPicker}
           getAreaName={getAreaName}
-          />
+        />
 
         {(isManager || isAdmin) && (
           <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
@@ -932,158 +978,186 @@ return (
           </button>
 
           {showForm && (
-  <div className="mt-4 space-y-3">
+            <div className="mt-4 space-y-3">
+              {/* 1. HOTEL */}
+              {(isManager || isAdmin) && (
+                <select
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                  value={selectedHotel}
+                  onChange={(e) => {
+                    setSelectedHotel(Number(e.target.value));
+                    setSelectedArea(null);
+                  }}
+                >
+                  {hotels.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-    {/* 1. HOTEL */}
-    {(isManager || isAdmin) && (
-      <select
-        className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-        value={selectedHotel}
-        onChange={(e) => {
-          setSelectedHotel(Number(e.target.value))
-          setSelectedArea(null)
-        }}
-      >
-        {hotels.map((h) => (
-          <option key={h.id} value={h.id}>
-            {h.name}
-          </option>
-        ))}
-      </select>
-    )}
+              {/* 2. TYP ODBIORCY */}
+              <select
+                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                value={selectedTargetType}
+                onChange={(e) => {
+                  setSelectedTargetType(
+                    e.target.value as "department" | "housekeeping_manager",
+                  );
+                  setSelectedArea(null);
+                  setSelectedRecipientType("team");
+                }}
+              >
+                <option value="department">Dział</option>
+                <option value="housekeeping_manager">Manager pokojowych</option>
+              </select>
 
-   {/* 2. DZIAŁ */}
-<select
-  className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-  value={selectedDepartment}
-  onChange={(e) => {
-    setSelectedDepartment(Number(e.target.value))
-    setSelectedArea(null)
-    setSelectedRecipientType("team")
-  }}
->
-  <option value={1}>POKOJOWE</option>
-  <option value={2}>KONSERWATORZY</option>
-  <option value={3}>RECEPCJA</option>
-</select>
+              {selectedTargetType === "department" && (
+                <>
+                  {/* 3. DZIAŁ */}
+                  <select
+                    className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                    value={selectedDepartment}
+                    onChange={(e) => {
+                      setSelectedDepartment(Number(e.target.value));
+                      setSelectedArea(null);
+                      setSelectedRecipientType("team");
+                    }}
+                  >
+                    <option value={1}>POKOJOWE</option>
+                    <option value={2}>KONSERWATORZY</option>
+                    <option value={3}>RECEPCJA</option>
+                  </select>
 
-{selectedDepartment === 1 && (
-  <select
-    className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-    value={selectedRecipientType}
-    onChange={(e) =>
-      setSelectedRecipientType(
-        e.target.value as "team" | "hotel_manager"
-      )
-    }
-  >
-    <option value="team">Zespół pokojowych</option>
-    <option value="hotel_manager">Kierowniczka pokojowych</option>
-  </select>
-)}
+                  {selectedDepartment === 1 && (
+                    <select
+                      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                      value={selectedRecipientType}
+                      onChange={(e) => {
+                        setSelectedRecipientType(
+                          e.target.value as "team" | "hotel_manager",
+                        );
+                        setSelectedArea(null);
+                      }}
+                    >
+                      <option value="team">Zespół pokojowych</option>
+                      <option value="hotel_manager">
+                        Kierowniczka pokojowych tego hotelu
+                      </option>
+                    </select>
+                  )}
 
-    {/* 3. OBSZAR - tylko dla pokojowych */}
-    {selectedDepartment === 1 &&
-  selectedRecipientType === "team" && (
-      <select
-        className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-        value={selectedArea ?? ""}
-        onChange={(e) => setSelectedArea(Number(e.target.value))}
-      >
-        <option value="">Wybierz obszar</option>
+                  {/* 4. OBSZAR - tylko dla zespołu pokojowych */}
+                  {selectedDepartment === 1 &&
+                    selectedRecipientType === "team" && (
+                      <select
+                        className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                        value={selectedArea ?? ""}
+                        onChange={(e) =>
+                          setSelectedArea(
+                            e.target.value ? Number(e.target.value) : null,
+                          )
+                        }
+                      >
+                        <option value="">Wybierz obszar</option>
 
-        {areas
-          .filter(
-            (area) =>
-              area.hotel_id ===
-              (isManager || isAdmin ? selectedHotel : profile.hotel_id)
-          )
-          .map((area) => (
-            <option key={area.id} value={area.id}>
-              {area.name}
-            </option>
-          ))}
-      </select>
-    )}
+                        {areas
+                          .filter(
+                            (area) =>
+                              area.hotel_id ===
+                              (isManager || isAdmin
+                                ? selectedHotel
+                                : profile.hotel_id),
+                          )
+                          .map((area) => (
+                            <option key={area.id} value={area.id}>
+                              {area.name}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                </>
+              )}
 
-    {/* 4. TREŚĆ ZADANIA */}
-    <input
-      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-      placeholder="Treść zadania"
-      value={newTask}
-      onChange={(e) => setNewTask(e.target.value)}
-    />
+              {/* 4. TREŚĆ ZADANIA */}
+              <input
+                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                placeholder="Treść zadania"
+                value={newTask}
+                onChange={(e) => setNewTask(e.target.value)}
+              />
 
-    {/* 5. ZDJĘCIA I FILMY */}
-    <label className="block text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
-      📎 Zdjęcia i filmy
-    </label>
+              {/* 5. ZDJĘCIA I FILMY */}
+              <label className="block text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+                📎 Zdjęcia i filmy
+              </label>
 
-    <input
-      type="file"
-      accept="image/*,video/*"
-      multiple
-      className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-      onChange={(e) => {
-        const files = Array.from(e.target.files || [])
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
 
-        const images = files.filter((file) =>
-          file.type.startsWith("image/")
-        )
+                  const images = files.filter((file) =>
+                    file.type.startsWith("image/"),
+                  );
 
-        const videos = files.filter((file) =>
-          file.type.startsWith("video/")
-        )
+                  const videos = files.filter((file) =>
+                    file.type.startsWith("video/"),
+                  );
 
-        if (images.length > 10) {
-          alert("Możesz dodać maksymalnie 10 zdjęć.")
-          e.target.value = ""
-          return
-        }
+                  if (images.length > 10) {
+                    alert("Możesz dodać maksymalnie 10 zdjęć.");
+                    e.target.value = "";
+                    return;
+                  }
 
-        if (videos.length > 1) {
-          alert("Możesz dodać maksymalnie 1 film.")
-          e.target.value = ""
-          return
-        }
+                  if (videos.length > 1) {
+                    alert("Możesz dodać maksymalnie 1 film.");
+                    e.target.value = "";
+                    return;
+                  }
 
-        setSelectedAttachments(files)
-      }}
-    />
+                  setSelectedAttachments(files);
+                }}
+              />
 
-    {selectedAttachments.length > 0 && (
-      <div className="rounded-xl bg-stone-50 p-3">
-        <p className="mb-2 text-xs font-bold text-stone-500">
-          Wybrane pliki ({selectedAttachments.length})
-        </p>
+              {selectedAttachments.length > 0 && (
+                <div className="rounded-xl bg-stone-50 p-3">
+                  <p className="mb-2 text-xs font-bold text-stone-500">
+                    Wybrane pliki ({selectedAttachments.length})
+                  </p>
 
-        <div className="space-y-1">
-          {selectedAttachments.map((file, index) => (
-            <div
-              key={index}
-              className="truncate text-xs text-stone-700"
-            >
-              {file.type.startsWith("image/")
-                ? "🖼️ "
-                : file.type.startsWith("video/")
-                ? "🎥 "
-                : "📄 "}
-              {file.name}
+                  <div className="space-y-1">
+                    {selectedAttachments.map((file, index) => (
+                      <div
+                        key={index}
+                        className="truncate text-xs text-stone-700"
+                      >
+                        {file.type.startsWith("image/")
+                          ? "🖼️ "
+                          : file.type.startsWith("video/")
+                            ? "🎥 "
+                            : "📄 "}
+                        {file.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 6. WYŚLIJ */}
+              <button
+                onClick={addTask}
+                className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
+              >
+                Wyślij zadanie
+              </button>
             </div>
-          ))}
-        </div>
-      </div>
-    )}
-
-    {/* 6. WYŚLIJ */}
-    <button
-      onClick={addTask}
-      className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
-    >
-      Wyślij zadanie
-    </button>
-  </div>
-)}
+          )}
         </div>
 
         <button
@@ -1130,5 +1204,5 @@ return (
         )}
       </div>
     </div>
-  )
+  );
 }
