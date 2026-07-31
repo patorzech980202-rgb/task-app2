@@ -1043,8 +1043,11 @@ export default function Home() {
                     >
                       <option value="team">Zespół pokojowych</option>
                       <option value="hotel_manager">
-                        Kierowniczka pokojowych tego hotelu
-                      </option>
+                      Kierowniczka pokojowych{" "}
+                      {getHotelName(
+                        isManager || isAdmin ? selectedHotel : profile.hotel_id
+                      )}
+                    </option>
                     </select>
                   )}
 
