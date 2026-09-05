@@ -362,17 +362,12 @@ export default function Home() {
       );
     });
 
-    if (
-      (isHousekeepingManagerTarget || isHotelManagerTarget) &&
-      targets.length === 0
-    ) {
-      alert(
-        isHousekeepingManagerTarget
-          ? "Nie znaleziono konta Managera pokojowych."
-          : "Nie znaleziono kierowniczki pokojowych dla wybranego hotelu.",
-      );
-      return;
-    }
+    if (isHotelManagerTarget && targets.length > 1) {
+  alert(
+    "Znaleziono więcej niż jedną kierowniczkę pokojowych dla tego hotelu. Sprawdź role kont w Supabase.",
+  );
+  return;
+}
 
     if (
       (isHousekeepingManagerTarget || isHotelManagerTarget) &&
@@ -1174,12 +1169,12 @@ export default function Home() {
 
               {/* 6. WYŚLIJ */}
               <button
-  onClick={addTask}
-  disabled={isSending}
-  className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50"
->
-  {isSending ? "Wysyłanie..." : "Wyślij zadanie"}
-</button>
+              onClick={addTask}
+              disabled={isSending}
+              className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSending ? "Wysyłanie..." : "Wyślij zadanie"}
+            </button>
             </div>
           )}
         </div>
