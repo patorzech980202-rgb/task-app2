@@ -369,18 +369,6 @@ export default function Home() {
   return;
 }
 
-    if (
-      (isHousekeepingManagerTarget || isHotelManagerTarget) &&
-      targets.length > 1
-    ) {
-      alert(
-        isHousekeepingManagerTarget
-          ? "Znaleziono więcej niż jednego Managera pokojowych. Sprawdź role kont w Supabase."
-          : "Znaleziono więcej niż jedną kierowniczkę pokojowych dla tego hotelu. Sprawdź role kont w Supabase.",
-      );
-      return;
-    }
-
     const directAssignee =
       isHousekeepingManagerTarget || isHotelManagerTarget
         ? targets[0]
