@@ -77,6 +77,7 @@ export default function Home() {
   const [selectedHotel, setSelectedHotel] = useState(1);
   const [filterHotel, setFilterHotel] = useState(0);
   const [showForm, setShowForm] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [showAreaPicker, setShowAreaPicker] = useState(false);
   const [openSections, setOpenSections] = useState({
     otrzymane: true,
@@ -300,21 +301,29 @@ export default function Home() {
   const isManager = profile?.role === "kierownik";
   const isAdmin = profile?.role === "administrator";
 
-  const addTask = async () => {
-    if (!newTask.trim() || !profile) return;
+ const addTask = async () => {
+  if (isSending) return;
+  if (!newTask.trim() || !profile) return;
 
+  setIsSending(true);
+
+  try {
     const targetHotelId =
       isManager || isAdmin ? selectedHotel : profile.hotel_id;
+
     const isHousekeepingManagerTarget =
       selectedTargetType === "housekeeping_manager";
+
     const isHotelManagerTarget =
       selectedTargetType === "department" &&
       selectedDepartment === 1 &&
       selectedRecipientType === "hotel_manager";
+
     const isHousekeepingTeamTarget =
       selectedTargetType === "department" &&
       selectedDepartment === 1 &&
       selectedRecipientType === "team";
+
     const targetDepartment = isHousekeepingManagerTarget
       ? 1
       : selectedDepartment;
@@ -340,7 +349,10 @@ export default function Home() {
       }
 
       if (isHotelManagerTarget) {
-        return p.role === "kierownik_hotelu" && p.hotel_id === targetHotelId;
+        return (
+          p.role === "kierownik_hotelu" &&
+          p.hotel_id === targetHotelId
+        );
       }
 
       return (
@@ -375,7 +387,9 @@ export default function Home() {
     }
 
     const directAssignee =
-      isHousekeepingManagerTarget || isHotelManagerTarget ? targets[0] : null;
+      isHousekeepingManagerTarget || isHotelManagerTarget
+        ? targets[0]
+        : null;
 
     const rows = [
       {
@@ -393,12 +407,10 @@ export default function Home() {
       },
     ];
 
-    console.log("rows:", rows);
-
-    const { data, error } = await supabase.from("tasks").insert(rows).select();
-
-    console.log("insert data:", data);
-    console.log("insert error:", error);
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert(rows)
+      .select();
 
     if (error) {
       alert("Błąd zapisu taska: " + error.message);
@@ -410,8 +422,11 @@ export default function Home() {
     if (createdTask && selectedAttachments.length > 0) {
       for (const file of selectedAttachments) {
         const fileExt = file.name.split(".").pop();
-        const fileName = `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
-        const filePath = `tasks/${createdTask.id}/${fileName}`;
+        const fileName =
+          `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
+
+        const filePath =
+          `tasks/${createdTask.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from("task-images")
@@ -421,7 +436,10 @@ export default function Home() {
 
         if (uploadError) {
           console.error("uploadError:", uploadError);
-          alert("Nie udało się wysłać pliku: " + uploadError.message);
+          alert(
+            "Nie udało się wysłać pliku: " +
+              uploadError.message,
+          );
           continue;
         }
 
@@ -440,28 +458,24 @@ export default function Home() {
 
     await refreshTaskImages();
 
-    for (const target of targets) {
-      const res = await fetch(
-        "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+    await Promise.all(
+      targets.map((target) =>
+        fetch(
+          "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              userId: target.id,
+              title: "Nowe zadanie",
+              body: newTask,
+            }),
           },
-          body: JSON.stringify({
-            userId: target.id,
-            title: "Nowe zadanie",
-            body: newTask,
-          }),
-        },
-      );
-
-      console.log("push response status:", res.status);
-
-      const responseText = await res.text();
-
-      console.log("push response body:", responseText);
-    }
+        ),
+      ),
+    );
 
     setNewTask("");
     setSelectedAttachments([]);
@@ -469,7 +483,13 @@ export default function Home() {
     setSelectedRecipientType("team");
     setSelectedArea(null);
     setShowForm(false);
-  };
+  } catch (err) {
+    console.error("addTask error:", err);
+    alert("Nie udało się wysłać zadania.");
+  } finally {
+    setIsSending(false);
+  }
+};
 
   const markDone = async (id: number) => {
     if (!profile) return;
@@ -1154,11 +1174,12 @@ export default function Home() {
 
               {/* 6. WYŚLIJ */}
               <button
-                onClick={addTask}
-                className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md"
-              >
-                Wyślij zadanie
-              </button>
+  onClick={addTask}
+  disabled={isSending}
+  className="w-full rounded-2xl bg-stone-900 py-3 text-sm font-bold text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {isSending ? "Wysyłanie..." : "Wyślij zadanie"}
+</button>
             </div>
           )}
         </div>
