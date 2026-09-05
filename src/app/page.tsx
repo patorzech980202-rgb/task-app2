@@ -305,6 +305,9 @@ export default function Home() {
   if (isSending) return;
   if (!newTask.trim() || !profile) return;
 
+  const taskText = newTask.trim();
+  const attachmentsToUpload = [...selectedAttachments];
+
   setIsSending(true);
 
   try {
@@ -376,7 +379,7 @@ export default function Home() {
 
     const rows = [
       {
-        title: newTask,
+        title: taskText,
         authorId: profile.id,
         assigneeId: directAssignee?.id || null,
         departmentId: targetDepartment,
@@ -402,63 +405,85 @@ export default function Home() {
 
     const createdTask = data?.[0];
 
-    if (createdTask && selectedAttachments.length > 0) {
-      for (const file of selectedAttachments) {
-        const fileExt = file.name.split(".").pop();
-        const fileName =
-          `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
+// Task jest już zapisany w bazie.
+// Od razu zwalniamy interfejs użytkownika.
+setNewTask("");
+setSelectedAttachments([]);
+setSelectedTargetType("department");
+setSelectedRecipientType("team");
+setSelectedArea(null);
+setShowForm(false);
+setIsSending(false);
 
-        const filePath =
-          `tasks/${createdTask.id}/${fileName}`;
+// Zdjęcia/filmy wysyłamy dalej bez blokowania formularza.
+const uploadPromise = (async () => {
+  if (!createdTask || attachmentsToUpload.length === 0) return;
 
-        const { error: uploadError } = await supabase.storage
-          .from("task-images")
-          .upload(filePath, file, {
-            contentType: file.type,
-          });
+  for (const file of attachmentsToUpload) {
+    const fileExt = file.name.split(".").pop();
+    const fileName =
+      `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
 
-        if (uploadError) {
-          console.error("uploadError:", uploadError);
-          alert(
-            "Nie udało się wysłać pliku: " +
-              uploadError.message,
-          );
-          continue;
-        }
+    const filePath =
+      `tasks/${createdTask.id}/${fileName}`;
 
-        const { data: publicUrlData } = supabase.storage
-          .from("task-images")
-          .getPublicUrl(filePath);
+    const { error: uploadError } = await supabase.storage
+      .from("task-images")
+      .upload(filePath, file, {
+        contentType: file.type,
+      });
 
-        await supabase.from("task_images").insert({
-          task_id: createdTask.id,
-          image_url: publicUrlData.publicUrl,
-          file_path: filePath,
-          file_type: file.type,
-        });
-      }
+    if (uploadError) {
+      console.error("uploadError:", uploadError);
+      continue;
     }
 
-    await refreshTaskImages();
+    const { data: publicUrlData } = supabase.storage
+      .from("task-images")
+      .getPublicUrl(filePath);
 
-    await Promise.all(
-      targets.map((target) =>
-        fetch(
-          "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              userId: target.id,
-              title: "Nowe zadanie",
-              body: newTask,
-            }),
-          },
-        ),
-      ),
-    );
+    await supabase.from("task_images").insert({
+      task_id: createdTask.id,
+      image_url: publicUrlData.publicUrl,
+      file_path: filePath,
+      file_type: file.type,
+    });
+  }
+
+  await refreshTaskImages();
+})();
+
+// Pushe lecą równolegle do wszystkich odbiorców.
+const pushPromise = Promise.all(
+  targets.map((target) =>
+    fetch(
+      "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: target.id,
+          title: "Nowe zadanie",
+          body: taskText,
+        }),
+      },
+    ),
+  ),
+);
+
+// Upload i push wykonują się równolegle.
+const results = await Promise.allSettled([
+  uploadPromise,
+  pushPromise,
+]);
+
+results.forEach((result) => {
+  if (result.status === "rejected") {
+    console.error("Błąd operacji w tle:", result.reason);
+  }
+});
 
     setNewTask("");
     setSelectedAttachments([]);
