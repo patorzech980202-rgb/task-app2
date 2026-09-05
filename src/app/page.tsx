@@ -346,24 +346,48 @@ export default function Home() {
       return;
     }
 
+    const generalAreaId = getGeneralAreaId(targetHotelId);
     const targets = (candidates || []).filter((p: Profile) => {
-      if (isHousekeepingManagerTarget) {
-        return p.role === "kierownik";
-      }
+  if (isHousekeepingManagerTarget) {
+  return (
+    p.role === "kierownik" &&
+    p.status === "na stanowisku"
+  );
+}
 
-      if (isHotelManagerTarget) {
-        return (
-          p.role === "kierownik_hotelu" &&
-          p.hotel_id === targetHotelId
-        );
-      }
+  if (isHotelManagerTarget) {
+  return (
+    p.role === "kierownik_hotelu" &&
+    p.hotel_id === targetHotelId &&
+    p.status === "na stanowisku"
+  );
+}
 
-      return (
-        p.role === "pracownik" &&
-        p.hotel_id === targetHotelId &&
-        p.status === "na stanowisku"
-      );
-    });
+  const basicMatch =
+    p.role === "pracownik" &&
+    p.hotel_id === targetHotelId &&
+    p.status === "na stanowisku";
+
+  if (!basicMatch) return false;
+
+  // Dla innych działów wystarczy hotel + status
+  if (!isHousekeepingTeamTarget) {
+    return true;
+  }
+
+  // Zadanie "Ogólne" dostają wszystkie pokojowe
+  // będące aktualnie na stanowisku w tym hotelu.
+  if (selectedArea === generalAreaId) {
+    return true;
+  }
+
+  // Zadanie na konkretne piętro dostają tylko osoby,
+  // które mają obecnie zaznaczone to piętro.
+  return (
+    selectedArea !== null &&
+    p.current_area_ids?.includes(selectedArea)
+  );
+});
 
     if (isHotelManagerTarget && targets.length > 1) {
   alert(
@@ -641,14 +665,15 @@ results.forEach((result) => {
     }
 
     if (isManager) {
-      return (
-        t.departmentId === profile.department_id &&
-        (filterHotel === 0 || t.hotel_id === filterHotel) &&
-        notAuthor &&
-        notArchived &&
-        !t.done
-      );
-    }
+  return (
+    t.departmentId === profile.department_id &&
+    (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    profile.status === "na stanowisku" &&
+    notAuthor &&
+    notArchived &&
+    !t.done
+  );
+}
 
     if (isHotelManager) {
       const addressedToMe =
@@ -706,14 +731,13 @@ results.forEach((result) => {
     }
 
     if (isHotelManager) {
-      return (
-        authorProfile?.hotel_id === profile.hotel_id &&
-        authorProfile?.department_id === profile.department_id &&
-        profile.status === "na stanowisku" &&
-        notArchived &&
-        !t.done
-      );
-    }
+  return (
+    authorProfile?.hotel_id === profile.hotel_id &&
+    authorProfile?.department_id === profile.department_id &&
+    notArchived &&
+    !t.done
+  );
+}
 
     return t.authorId === profile.id && notArchived;
   });
@@ -733,6 +757,17 @@ results.forEach((result) => {
       );
     }
 
+    if (isHotelManager) {
+  const addressedToMe =
+    t.assigneeId === null || t.assigneeId === profile.id;
+
+  return (
+    t.hotel_id === profile.hotel_id &&
+    t.departmentId === profile.department_id &&
+    addressedToMe &&
+    t.done
+  );
+}
     const addressedToMe = t.assigneeId === null || t.assigneeId === profile.id;
 
     return (
@@ -759,6 +794,14 @@ results.forEach((result) => {
         t.done
       );
     }
+
+    if (isHotelManager) {
+  return (
+    authorProfile?.hotel_id === profile.hotel_id &&
+    authorProfile?.department_id === profile.department_id &&
+    t.done
+  );
+}
 
     return t.authorId === profile.id && t.archivedBy?.includes(profile.id);
   });
