@@ -234,6 +234,23 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!session?.user) {
+      setProfile(null);
+      setTasks([]);
+      setProfiles([]);
+      setTaskImages([]);
+    }
+  });
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}, []);
+
+  useEffect(() => {
     if (!profile) return;
 
     const channel = supabase
@@ -623,15 +640,18 @@ results.forEach((result) => {
 
       console.log("subscription:", subscription);
 
-      const { data: auth } = await supabase.auth.getUser();
+                const {
+            data: { session },
+          } = await supabase.auth.getSession();
 
-      if (!auth.user) {
-        alert("Musisz być zalogowany");
-        return;
-      }
+          if (!session?.user) {
+            setProfile(null);
+            alert("Sesja wygasła. Zaloguj się ponownie.");
+            return;
+          }
 
       const { error } = await supabase.from("push_subscriptions").insert({
-        user_id: auth.user.id,
+        user_id: session.user.id,
         subscription: JSON.parse(JSON.stringify(subscription)),
       });
 
@@ -706,8 +726,7 @@ results.forEach((result) => {
       areaMatches &&
       notAuthor &&
       profile.status === "na stanowisku" &&
-      notArchived &&
-      !t.done
+      notArchived 
     );
   });
 
@@ -1200,28 +1219,42 @@ results.forEach((result) => {
               />
 
               {selectedAttachments.length > 0 && (
-                <div className="rounded-xl bg-stone-50 p-3">
-                  <p className="mb-2 text-xs font-bold text-stone-500">
-                    Wybrane pliki ({selectedAttachments.length})
-                  </p>
+  <div className="rounded-xl bg-stone-50 p-3">
+    <p className="mb-2 text-xs font-bold text-stone-500">
+      Wybrane pliki ({selectedAttachments.length})
+    </p>
 
-                  <div className="space-y-1">
-                    {selectedAttachments.map((file, index) => (
-                      <div
-                        key={index}
-                        className="truncate text-xs text-stone-700"
-                      >
-                        {file.type.startsWith("image/")
-                          ? "🖼️ "
-                          : file.type.startsWith("video/")
-                            ? "🎥 "
-                            : "📄 "}
-                        {file.name}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+    <div className="space-y-1">
+      {selectedAttachments.map((file, index) => (
+        <div
+          key={index}
+          className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2"
+        >
+          <div className="min-w-0 truncate text-xs text-stone-700">
+            {file.type.startsWith("image/")
+              ? "🖼️ "
+              : file.type.startsWith("video/")
+                ? "🎥 "
+                : "📄 "}
+            {file.name}
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedAttachments((prev) =>
+                prev.filter((_, i) => i !== index)
+              )
+            }
+            className="shrink-0 rounded-lg bg-red-100 px-2 py-1 text-xs font-bold text-red-700"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
 
               {/* 6. WYŚLIJ */}
               <button
