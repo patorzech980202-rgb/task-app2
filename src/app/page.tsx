@@ -33,6 +33,7 @@ type Task = {
   createdAt: string;
   archivedBy: string[];
   area_id: number | null;
+  area_ids: number[] | null;
 };
 
 type TaskImage = {
@@ -74,6 +75,7 @@ export default function Home() {
     "team" | "hotel_manager"
   >("team");
   const [selectedArea, setSelectedArea] = useState<number | null>(null);
+  const [selectedAreas, setSelectedAreas] = useState<number[]>([]);
   const [selectedHotel, setSelectedHotel] = useState(1);
   const [filterHotel, setFilterHotel] = useState(0);
   const [showForm, setShowForm] = useState(false);
@@ -138,6 +140,19 @@ export default function Home() {
 
     return areas.find((area) => area.id === areaId)?.name || "Bez obszaru";
   };
+  const getTaskAreaNames = (task: Task) => {
+  const areaIds =
+    task.area_ids && task.area_ids.length > 0
+      ? task.area_ids
+      : task.area_id !== null
+        ? [task.area_id]
+        : [];
+
+  return areaIds
+    .map((areaId) => areas.find((area) => area.id === areaId)?.name)
+    .filter(Boolean)
+    .join(", ");
+};
   const getProfileName = (profileId: string | null) => {
     if (!profileId) return "Nieznany pracownik";
 
@@ -348,9 +363,9 @@ export default function Home() {
       ? 1
       : selectedDepartment;
 
-    if (isHousekeepingTeamTarget && selectedArea === null) {
-      alert("Wybierz obszar dla zadania pokojowych.");
-      return;
+    if (isHousekeepingTeamTarget && selectedAreas.length === 0) {
+    alert("Wybierz co najmniej jeden obszar dla zadania pokojowych.");
+    return;
     }
 
     const { data: candidates, error: candidatesError } = await supabase
@@ -394,16 +409,18 @@ export default function Home() {
 
   // Zadanie "Ogólne" dostają wszystkie pokojowe
   // będące aktualnie na stanowisku w tym hotelu.
-  if (selectedArea === generalAreaId) {
-    return true;
-  }
+  if (
+  generalAreaId !== null &&
+  selectedAreas.includes(generalAreaId)
+) {
+  return true;
+}
 
   // Zadanie na konkretne piętro dostają tylko osoby,
   // które mają obecnie zaznaczone to piętro.
-  return (
-    selectedArea !== null &&
-    p.current_area_ids?.includes(selectedArea)
-  );
+ return selectedAreas.some(
+  (areaId) => p.current_area_ids?.includes(areaId) ?? false,
+    );
 });
 
     if (isHotelManagerTarget && targets.length > 1) {
@@ -425,7 +442,13 @@ export default function Home() {
         assigneeId: directAssignee?.id || null,
         departmentId: targetDepartment,
         hotel_id: targetHotelId,
-        area_id: isHousekeepingTeamTarget ? selectedArea : null,
+        area_id: isHousekeepingTeamTarget
+          ? selectedAreas[0] ?? null
+          : null,
+
+        area_ids: isHousekeepingTeamTarget
+          ? selectedAreas
+          : [],
         done: false,
         completedBy: null,
         archivedBy: [],
@@ -453,6 +476,7 @@ setSelectedAttachments([]);
 setSelectedTargetType("department");
 setSelectedRecipientType("team");
 setSelectedArea(null);
+setSelectedAreas([]);
 setShowForm(false);
 setIsSending(false);
 
@@ -710,12 +734,21 @@ results.forEach((result) => {
       );
     }
 
-    const generalAreaId = getGeneralAreaId(profile.hotel_id);
+   const generalAreaId = getGeneralAreaId(profile.hotel_id);
 
-    const areaMatches =
-      profile.department_id !== 1 ||
-      t.area_id === generalAreaId ||
-      (t.area_id !== null && profile.current_area_ids?.includes(t.area_id));
+const taskAreaIds =
+  t.area_ids && t.area_ids.length > 0
+    ? t.area_ids
+    : t.area_id !== null
+      ? [t.area_id]
+      : [];
+
+const areaMatches =
+  profile.department_id !== 1 ||
+  (generalAreaId !== null && taskAreaIds.includes(generalAreaId)) ||
+  taskAreaIds.some(
+    (areaId) => profile.current_area_ids?.includes(areaId) ?? false,
+  );
 
     const addressedToMe = t.assigneeId === null || t.assigneeId === profile.id;
 
@@ -873,6 +906,11 @@ results.forEach((result) => {
               <p className="mt-1 text-xs font-medium text-blue-700">
                 🏨 {getHotelName(t.hotel_id)}
               </p>
+              {t.departmentId === 1 && getTaskAreaNames(t) && (
+                <p className="mt-1 text-xs font-medium text-stone-600">
+                  📍 {getTaskAreaNames(t)}
+                </p>
+              )}
 
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {t.done ? (
@@ -1077,6 +1115,7 @@ results.forEach((result) => {
                   onChange={(e) => {
                     setSelectedHotel(Number(e.target.value));
                     setSelectedArea(null);
+                    setSelectedAreas([]);
                   }}
                 >
                   {hotels.map((h) => (
@@ -1092,12 +1131,13 @@ results.forEach((result) => {
                 className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                 value={selectedTargetType}
                 onChange={(e) => {
-                  setSelectedTargetType(
-                    e.target.value as "department" | "housekeeping_manager",
-                  );
-                  setSelectedArea(null);
-                  setSelectedRecipientType("team");
-                }}
+  setSelectedTargetType(
+    e.target.value as "department" | "housekeeping_manager",
+  );
+  setSelectedArea(null);
+  setSelectedAreas([]);
+  setSelectedRecipientType("team");
+}}
               >
                 <option value="department">Dział</option>
                 <option value="housekeeping_manager">Manager pokojowych</option>
@@ -1109,11 +1149,12 @@ results.forEach((result) => {
                   <select
                     className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                     value={selectedDepartment}
-                    onChange={(e) => {
-                      setSelectedDepartment(Number(e.target.value));
-                      setSelectedArea(null);
-                      setSelectedRecipientType("team");
-                    }}
+                   onChange={(e) => {
+  setSelectedDepartment(Number(e.target.value));
+  setSelectedArea(null);
+  setSelectedAreas([]);
+  setSelectedRecipientType("team");
+}}
                   >
                     <option value={1}>POKOJOWE</option>
                     <option value={2}>KONSERWATORZY</option>
@@ -1125,11 +1166,12 @@ results.forEach((result) => {
                       className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                       value={selectedRecipientType}
                       onChange={(e) => {
-                        setSelectedRecipientType(
-                          e.target.value as "team" | "hotel_manager",
-                        );
-                        setSelectedArea(null);
-                      }}
+  setSelectedRecipientType(
+    e.target.value as "team" | "hotel_manager",
+  );
+  setSelectedArea(null);
+  setSelectedAreas([]);
+}}
                     >
                       <option value="team">Zespół pokojowych</option>
                       <option value="hotel_manager">
@@ -1141,34 +1183,45 @@ results.forEach((result) => {
                     </select>
                   )}
 
-                  {/* 4. OBSZAR - tylko dla zespołu pokojowych */}
+                  {/* 4. OBSZARY - tylko dla zespołu pokojowych */}
                   {selectedDepartment === 1 &&
                     selectedRecipientType === "team" && (
-                      <select
-                        className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
-                        value={selectedArea ?? ""}
-                        onChange={(e) =>
-                          setSelectedArea(
-                            e.target.value ? Number(e.target.value) : null,
-                          )
-                        }
-                      >
-                        <option value="">Wybierz obszar</option>
+                      <div className="rounded-2xl border border-stone-300 bg-stone-50 p-3">
+                        <p className="mb-2 text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
+                          Wybierz obszary
+                        </p>
 
-                        {areas
-                          .filter(
-                            (area) =>
-                              area.hotel_id ===
-                              (isManager || isAdmin
-                                ? selectedHotel
-                                : profile.hotel_id),
-                          )
-                          .map((area) => (
-                            <option key={area.id} value={area.id}>
-                              {area.name}
-                            </option>
-                          ))}
-                      </select>
+                        <div className="space-y-2">
+                          {areas
+                            .filter(
+                              (area) =>
+                                area.hotel_id ===
+                                (isManager || isAdmin
+                                  ? selectedHotel
+                                  : profile.hotel_id),
+                            )
+                            .map((area) => (
+                              <label
+                                key={area.id}
+                                className="flex items-center gap-3 rounded-xl bg-white px-3 py-2 text-sm text-stone-900"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedAreas.includes(area.id)}
+                                  onChange={() => {
+                                    setSelectedAreas((prev) =>
+                                      prev.includes(area.id)
+                                        ? prev.filter((id) => id !== area.id)
+                                        : [...prev, area.id],
+                                    );
+                                  }}
+                                />
+
+                                <span>{area.name}</span>
+                              </label>
+                            ))}
+                        </div>
+                      </div>
                     )}
                 </>
               )}
