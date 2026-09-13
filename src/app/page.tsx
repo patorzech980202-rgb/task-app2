@@ -34,6 +34,8 @@ type Task = {
   archivedBy: string[];
   area_id: number | null;
   area_ids: number[] | null;
+  history_archived_at: string | null;
+  history_archived_by: string | null;
 };
 
 type TaskImage = {
@@ -58,7 +60,7 @@ type Profile = {
   department_id: number;
   hotel_id: number;
   status: Status;
-  role: "pracownik" | "kierownik_hotelu" | "kierownik" | "administrator";
+  role: "pracownik" | "kierownik_hotelu" | "kierownik" | "administrator"| "admin";
   push_token?: string | null;
   current_area_id: number | null;
   current_area_ids: number[] | null;
@@ -331,7 +333,7 @@ export default function Home() {
 
   const isHotelManager = profile?.role === "kierownik_hotelu";
   const isManager = profile?.role === "kierownik";
-  const isAdmin = profile?.role === "administrator";
+  const isAdmin = profile?.role === "administrator"|| profile?.role === "admin";
 
  const addTask = async () => {
   if (isSending) return;
@@ -589,6 +591,65 @@ results.forEach((result) => {
       .eq("id", id);
   };
 
+  const archivePreviousMonths = async () => {
+  if (!profile || !isAdmin) return;
+
+  const confirmed = window.confirm(
+    "Przenieść wszystkie wykonane zadania ze starszych miesięcy do archiwum historycznego?",
+  );
+
+  if (!confirmed) return;
+
+  const now = new Date();
+
+  const startOfCurrentMonth = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1,
+    0,
+    0,
+    0,
+    0,
+  );
+
+  const archivedAt = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .update({
+      history_archived_at: archivedAt,
+      history_archived_by: profile.id,
+    })
+    .eq("done", true)
+    .is("history_archived_at", null)
+    .not("completedAt", "is", null)
+    .lt("completedAt", startOfCurrentMonth.toISOString())
+    .select("id");
+
+  if (error) {
+    alert("Błąd archiwizacji historycznej: " + error.message);
+    return;
+  }
+
+  const archivedIds = new Set((data || []).map((task) => task.id));
+
+  setTasks((prev) =>
+    prev.map((task) =>
+      archivedIds.has(task.id)
+        ? {
+            ...task,
+            history_archived_at: archivedAt,
+            history_archived_by: profile.id,
+          }
+        : task,
+    ),
+  );
+
+  alert(
+    `Przeniesiono ${data?.length || 0} zadań do archiwum historycznego.`,
+  );
+};
+
   const toggleStatus = async () => {
     if (!profile) return;
 
@@ -694,6 +755,7 @@ results.forEach((result) => {
 
   const received = tasks.filter((t) => {
     if (!profile) return false;
+    if (t.history_archived_at) return false;
 
     const notArchived = !t.archivedBy?.includes(profile.id);
     const notAuthor = t.authorId !== profile.id;
@@ -765,6 +827,7 @@ const areaMatches =
 
   const sent = tasks.filter((t) => {
     if (!profile) return false;
+    if (t.history_archived_at) return false;
 
     const notArchived = !t.archivedBy?.includes(profile.id);
 
@@ -796,6 +859,7 @@ const areaMatches =
 
   const archivedReceived = tasks.filter((t) => {
     if (!profile) return false;
+    if (t.history_archived_at) return false;
 
     if (isAdmin) {
       return t.done;
@@ -832,6 +896,7 @@ const areaMatches =
 
   const archivedSent = tasks.filter((t) => {
     if (!profile) return false;
+    if (t.history_archived_at) return false;
 
     const authorProfile = profiles.find((p) => p.id === t.authorId);
 
@@ -857,6 +922,10 @@ const areaMatches =
 
     return t.authorId === profile.id && t.archivedBy?.includes(profile.id);
   });
+
+  const historyTasks = isAdmin
+  ? tasks.filter((t) => t.history_archived_at !== null)
+  : [];
 
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null;
@@ -995,6 +1064,104 @@ const areaMatches =
     });
   };
 
+  const renderHistoryArchive = () => {
+  if (!isAdmin) return null;
+
+  if (historyTasks.length === 0) {
+    return (
+      <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+        <p className="text-sm text-stone-500">
+          Brak zadań w archiwum historycznym.
+        </p>
+      </div>
+    );
+  }
+
+  const monthGroups = historyTasks.reduce<Record<string, Task[]>>(
+    (groups, task) => {
+      if (!task.completedAt) return groups;
+
+      const date = new Date(task.completedAt);
+
+      const monthKey = `${date.getFullYear()}-${String(
+        date.getMonth() + 1,
+      ).padStart(2, "0")}`;
+
+      if (!groups[monthKey]) {
+        groups[monthKey] = [];
+      }
+
+      groups[monthKey].push(task);
+
+      return groups;
+    },
+    {},
+  );
+
+  const sortedMonths = Object.entries(monthGroups).sort(([a], [b]) =>
+    b.localeCompare(a),
+  );
+
+ return (
+  <details className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+    <summary className="cursor-pointer font-bold text-stone-900">
+      📚 Archiwum historyczne ({historyTasks.length})
+    </summary>
+
+    <div className="mt-4 space-y-2">
+        {sortedMonths.map(([monthKey, monthTasks]) => {
+          const [year, month] = monthKey.split("-").map(Number);
+
+          const monthName = new Date(
+            year,
+            month - 1,
+            1,
+          ).toLocaleDateString("pl-PL", {
+            month: "long",
+            year: "numeric",
+          });
+
+          return (
+            <details
+              key={monthKey}
+              className="rounded-2xl border border-stone-200 bg-stone-50 p-3"
+            >
+              <summary className="cursor-pointer font-bold text-stone-900">
+                📅 {monthName} ({monthTasks.length})
+              </summary>
+
+              <div className="mt-3 space-y-2">
+                {departments.map((department) => {
+                  const departmentTasks = monthTasks.filter(
+                    (task) => task.departmentId === department.id,
+                  );
+
+                  if (departmentTasks.length === 0) return null;
+
+                  return (
+                    <details
+                      key={department.id}
+                      className="rounded-xl border border-stone-200 bg-white p-3"
+                    >
+                      <summary className="cursor-pointer text-sm font-bold text-stone-800">
+                        {department.name} ({departmentTasks.length})
+                      </summary>
+
+                      <div className="mt-3">
+                        {renderTasks(departmentTasks, "history")}
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </details>
+  );
+};
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-blue-200 flex items-center justify-center p-6">
@@ -1096,6 +1263,21 @@ const areaMatches =
             </select>
           </div>
         )}
+
+        {isAdmin && (
+  <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+    <p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+      Archiwizacja miesięczna
+    </p>
+
+    <button
+      onClick={archivePreviousMonths}
+      className="w-full rounded-2xl bg-stone-700 py-3 text-sm font-bold text-white shadow-md"
+    >
+      📚 Przenieś poprzednie miesiące do archiwum historycznego
+    </button>
+  </div>
+)}
 
         <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
           <button
@@ -1363,6 +1545,7 @@ const areaMatches =
             {renderTasks(archivedSent, "archived")}
           </>
         )}
+        {isAdmin && renderHistoryArchive()}
       </div>
     </div>
   );
