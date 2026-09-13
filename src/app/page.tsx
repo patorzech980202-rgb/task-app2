@@ -36,6 +36,8 @@ type Task = {
   area_ids: number[] | null;
   history_archived_at: string | null;
   history_archived_by: string | null;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
 };
 
 type TaskImage = {
@@ -591,6 +593,59 @@ results.forEach((result) => {
       .eq("id", id);
   };
 
+  const cancelTask = async (id: number) => {
+  if (!profile) return;
+
+  const task = tasks.find((t) => t.id === id);
+
+  if (!task) return;
+
+  if (task.authorId !== profile.id) {
+    alert("Możesz wycofać tylko zadanie wysłane przez siebie.");
+    return;
+  }
+
+  if (task.done) {
+    alert("Nie można wycofać zadania, które zostało już wykonane.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Czy na pewno chcesz wycofać to zadanie? Odbiorcy przestaną je widzieć.",
+  );
+
+  if (!confirmed) return;
+
+  const cancelledAt = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      cancelled_at: cancelledAt,
+      cancelled_by: profile.id,
+    })
+    .eq("id", id)
+    .eq("authorId", profile.id)
+    .eq("done", false);
+
+  if (error) {
+    alert("Nie udało się wycofać zadania: " + error.message);
+    return;
+  }
+
+  setTasks((prev) =>
+    prev.map((t) =>
+      t.id === id
+        ? {
+            ...t,
+            cancelled_at: cancelledAt,
+            cancelled_by: profile.id,
+          }
+        : t,
+    ),
+  );
+};
+
   const archivePreviousMonths = async () => {
   if (!profile || !isAdmin) return;
 
@@ -756,6 +811,7 @@ results.forEach((result) => {
   const received = tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
+    if (t.cancelled_at) return false;
 
     const notArchived = !t.archivedBy?.includes(profile.id);
     const notAuthor = t.authorId !== profile.id;
@@ -828,6 +884,7 @@ const areaMatches =
   const sent = tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
+    if (t.cancelled_at) return false;
 
     const notArchived = !t.archivedBy?.includes(profile.id);
 
@@ -1047,6 +1104,19 @@ const areaMatches =
                 )}
               </div>
             )}
+
+            {mode === "sent" &&
+  !t.done &&
+  t.authorId === profile?.id && (
+    <div className="shrink-0">
+      <button
+        onClick={() => cancelTask(t.id)}
+        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 shadow-sm"
+      >
+        Wycofaj zadanie
+      </button>
+    </div>
+  )}
 
             {mode === "sent" && t.done && (
               <div className="shrink-0">
