@@ -47,6 +47,15 @@ type TaskImage = {
   file_path?: string | null;
   file_type?: string | null;
 };
+
+type TaskComment = {
+  id: number;
+  task_id: number;
+  author_id: string;
+  message: string;
+  created_at: string;
+};
+
 type Area = {
   id: number;
   hotel_id: number;
@@ -107,6 +116,12 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskImages, setTaskImages] = useState<TaskImage[]>([]);
+  const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
+  const [openCommentsTaskId, setOpenCommentsTaskId] = useState<number | null>(
+  null,
+);
+
+const [commentDraft, setCommentDraft] = useState("");
   const [signedImageUrls, setSignedImageUrls] = useState<
     Record<number, string>
   >({});
@@ -200,6 +215,53 @@ export default function Home() {
     await loadSignedImageUrls(images || []);
   };
 
+const refreshTaskComments = async () => {
+  const { data, error } = await supabase
+    .from("task_comments")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Błąd pobierania wiadomości:", error);
+    return;
+  }
+
+  setTaskComments(data || []);
+};
+
+const sendTaskComment = async (taskId: number) => {
+  if (!profile) return;
+
+  const message = commentDraft.trim();
+
+  if (!message) return;
+
+  const { data, error } = await supabase
+    .from("task_comments")
+    .insert({
+      task_id: taskId,
+      author_id: profile.id,
+      message,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    alert("Nie udało się wysłać wiadomości: " + error.message);
+    return;
+  }
+
+  setTaskComments((prev) => {
+    if (prev.some((comment) => comment.id === data.id)) {
+      return prev;
+    }
+
+    return [...prev, data];
+  });
+
+  setCommentDraft("");
+};
+
   const toggleSection = (key: SectionKey) => {
     setOpenSections((prev) => ({
       ...prev,
@@ -240,6 +302,7 @@ export default function Home() {
       setTasks(data || []);
 
       await refreshTaskImages();
+      await refreshTaskComments();
 
       const { data: allProfiles } = await supabase.from("profiles").select("*");
       setProfiles(allProfiles || []);
@@ -313,6 +376,37 @@ export default function Home() {
       supabase.removeChannel(channel);
     };
   }, [profile]);
+
+useEffect(() => {
+  if (!profile) return;
+
+  const commentsChannel = supabase
+    .channel("task-comments-live")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "task_comments",
+      },
+      (payload) => {
+        const newComment = payload.new as TaskComment;
+
+        setTaskComments((prev) => {
+          if (prev.some((comment) => comment.id === newComment.id)) {
+            return prev;
+          }
+
+          return [...prev, newComment];
+        });
+      },
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(commentsChannel);
+  };
+}, [profile]);
 
   const signIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -1006,6 +1100,10 @@ const areaMatches =
     return list.map((t) => {
       const attachments = getTaskImages(t.id);
 
+      const comments = taskComments.filter(
+  (comment) => comment.task_id === t.id,
+);
+
       const imagesOnly = attachments.filter(
         (item) => !item.file_type || item.file_type.startsWith("image/"),
       );
@@ -1063,6 +1161,101 @@ const areaMatches =
                 setPreviewIndex={setPreviewIndex}
                 setPreviewImage={setPreviewImage}
               />
+
+              <button
+  type="button"
+  onClick={() =>
+    setOpenCommentsTaskId((prev) =>
+      prev === t.id ? null : t.id,
+    )
+  }
+  className="mt-3 flex w-full items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-700"
+>
+  <span>💬 Wiadomości</span>
+
+  <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs">
+    {comments.length}
+  </span>
+</button>
+
+{openCommentsTaskId === t.id && (
+  <div className="mt-2 rounded-2xl border border-stone-200 bg-stone-50 p-3">
+    <div className="max-h-64 space-y-2 overflow-y-auto">
+      {comments.length === 0 ? (
+        <p className="py-3 text-center text-xs text-stone-500">
+          Brak wiadomości. Możesz rozpocząć rozmowę.
+        </p>
+      ) : (
+        comments.map((comment) => {
+          const isOwnComment = comment.author_id === profile?.id;
+
+          return (
+            <div
+              key={comment.id}
+              className={`flex ${
+                isOwnComment ? "justify-end" : "justify-start"
+              }`}
+            >
+              <div
+                className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                  isOwnComment
+                    ? "bg-stone-900 text-white"
+                    : "border border-stone-200 bg-white text-stone-900"
+                }`}
+              >
+                <p
+                  className={`mb-1 text-[11px] font-bold ${
+                    isOwnComment ? "text-stone-300" : "text-stone-500"
+                  }`}
+                >
+                  {getProfileName(comment.author_id)}
+                </p>
+
+                <p className="whitespace-pre-wrap text-sm">
+                  {comment.message}
+                </p>
+
+                <p
+                  className={`mt-1 text-[10px] ${
+                    isOwnComment ? "text-stone-400" : "text-stone-400"
+                  }`}
+                >
+                  {new Date(comment.created_at).toLocaleString("pl-PL", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+
+    {mode !== "history" && (
+      <div className="mt-3 flex gap-2">
+        <textarea
+          value={commentDraft}
+          onChange={(e) => setCommentDraft(e.target.value)}
+          placeholder="Napisz wiadomość..."
+          rows={2}
+          className="min-h-[44px] flex-1 resize-none rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none"
+        />
+
+        <button
+          type="button"
+          onClick={() => sendTaskComment(t.id)}
+          disabled={!commentDraft.trim()}
+          className="self-end rounded-xl bg-stone-900 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Wyślij
+        </button>
+      </div>
+    )}
+  </div>
+)}
 
               {t.done && (
                 <div className="mt-2 text-xs text-stone-500">
