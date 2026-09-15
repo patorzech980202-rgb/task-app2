@@ -236,6 +236,10 @@ const sendTaskComment = async (taskId: number) => {
 
   if (!message) return;
 
+  const task = tasks.find((t) => t.id === taskId);
+
+  if (!task) return;
+
   const { data, error } = await supabase
     .from("task_comments")
     .insert({
@@ -260,6 +264,47 @@ const sendTaskComment = async (taskId: number) => {
   });
 
   setCommentDraft("");
+
+  let notificationUserIds: string[] = [];
+
+  // Jeśli wiadomość napisał odbiorca taska,
+  // powiadamiamy autora zadania.
+  if (profile.id !== task.authorId) {
+    notificationUserIds = [task.authorId];
+  } else {
+    // Jeśli odpowiada autor taska,
+    // powiadamiamy osoby, które wcześniej pisały w tym wątku.
+    notificationUserIds = [
+      ...new Set(
+        taskComments
+          .filter(
+            (comment) =>
+              comment.task_id === taskId &&
+              comment.author_id !== profile.id,
+          )
+          .map((comment) => comment.author_id),
+      ),
+    ];
+  }
+
+  await Promise.allSettled(
+    notificationUserIds.map((userId) =>
+      fetch(
+        "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId,
+            title: "💬 Nowa wiadomość w zadaniu",
+            body: message,
+          }),
+        },
+      ),
+    ),
+  );
 };
 
   const toggleSection = (key: SectionKey) => {
@@ -314,6 +359,42 @@ const sendTaskComment = async (taskId: number) => {
 
     load();
   }, []);
+
+  useEffect(() => {
+  if (!profile) return;
+
+  const saveDailyActivity = async () => {
+    const todayWarsaw = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Warsaw",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const { error } = await supabase
+      .from("user_activity_daily")
+      .upsert(
+        {
+          user_id: profile.id,
+          activity_date: todayWarsaw,
+          hotel_id: profile.hotel_id,
+          department_id: profile.department_id,
+          last_seen_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "user_id,activity_date",
+        },
+      );
+
+    if (error) {
+      console.error("Błąd zapisu aktywności:", error);
+    } else {
+      console.log("Aktywność użytkownika zapisana.");
+    }
+  };
+
+  saveDailyActivity();
+}, [profile]);
 
   useEffect(() => {
   const {
