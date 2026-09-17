@@ -251,9 +251,20 @@ const sendTaskComment = async (taskId: number) => {
     .single();
 
   if (error) {
-    alert("Nie udało się wysłać wiadomości: " + error.message);
-    return;
-  }
+  await logAppError(
+    "task_comment_error",
+    error.message,
+    {
+      taskId,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    },
+  );
+
+  alert("Nie udało się wysłać wiadomości: " + error.message);
+  return;
+}
 
   setTaskComments((prev) => {
     if (prev.some((comment) => comment.id === data.id)) {
@@ -288,8 +299,9 @@ const sendTaskComment = async (taskId: number) => {
   }
 
   await Promise.allSettled(
-    notificationUserIds.map((userId) =>
-      fetch(
+  notificationUserIds.map(async (userId) => {
+    try {
+      const response = await fetch(
         "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
         {
           method: "POST",
@@ -302,9 +314,36 @@ const sendTaskComment = async (taskId: number) => {
             body: message,
           }),
         },
-      ),
-    ),
-  );
+      );
+
+      if (!response.ok) {
+        const responseText = await response.text();
+
+        await logAppError(
+          "task_comment_push_error",
+          `Push zwrócił HTTP ${response.status}`,
+          {
+            taskId,
+            recipientUserId: userId,
+            status: response.status,
+            response: responseText,
+          },
+        );
+      }
+    } catch (pushError) {
+      await logAppError(
+        "task_comment_push_error",
+        pushError instanceof Error
+          ? pushError.message
+          : "Nieznany błąd wysyłania push",
+        {
+          taskId,
+          recipientUserId: userId,
+        },
+      );
+    }
+  }),
+);
 };
 
   const toggleSection = (key: SectionKey) => {
@@ -325,6 +364,31 @@ const sendTaskComment = async (taskId: number) => {
       navigator.vibrate([200, 100, 200]);
     }
   };
+
+  const logAppError = async (
+  errorType: string,
+  message: string,
+  details: Record<string, unknown> | null = null,
+) => {
+  try {
+    const { error } = await supabase.from("app_errors").insert({
+      user_id: profile?.id ?? null,
+      hotel_id: profile?.hotel_id ?? null,
+      department_id: profile?.department_id ?? null,
+      error_type: errorType,
+      message,
+      details,
+      page_path:
+        typeof window !== "undefined" ? window.location.pathname : null,
+    });
+
+    if (error) {
+      console.error("Nie udało się zapisać błędu aplikacji:", error);
+    }
+  } catch (loggingError) {
+    console.error("Błąd mechanizmu logowania:", loggingError);
+  }
+};
 
   useEffect(() => {
     const load = async () => {
@@ -387,11 +451,16 @@ const sendTaskComment = async (taskId: number) => {
       );
 
     if (error) {
-      console.error("Błąd zapisu aktywności:", error);
-    } else {
-      console.log("Aktywność użytkownika zapisana.");
-    }
-  };
+  console.error("Błąd zapisu aktywności:", {
+    message: error.message,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
+} else {
+  console.log("Aktywność użytkownika zapisana.");
+}  
+};
 
   saveDailyActivity();
 }, [profile]);
