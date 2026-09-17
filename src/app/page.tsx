@@ -1238,14 +1238,14 @@ const areaMatches =
     }
 
     if (isHotelManager) {
-  const addressedToMe =
-    t.assigneeId === null || t.assigneeId === profile.id;
+  const wasDirectlyAssignedToMe = t.assigneeId === profile.id;
+  const wasCompletedByMe = t.completedBy === profile.id;
 
   return (
     t.hotel_id === profile.hotel_id &&
     t.departmentId === profile.department_id &&
-    addressedToMe &&
-    t.done
+    t.done &&
+    (wasDirectlyAssignedToMe || wasCompletedByMe)
   );
 }
     const addressedToMe = t.assigneeId === null || t.assigneeId === profile.id;
