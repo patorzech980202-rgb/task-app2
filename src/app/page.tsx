@@ -643,10 +643,13 @@ useEffect(() => {
   );
 }
 
-  const basicMatch =
-    p.role === "pracownik" &&
-    p.hotel_id === targetHotelId &&
-    p.status === "na stanowisku";
+ const basicMatch =
+  (
+    p.role === "pracownik" ||
+    (isHousekeepingTeamTarget && p.role === "kierownik_hotelu")
+  ) &&
+  p.hotel_id === targetHotelId &&
+  p.status === "na stanowisku";
 
   if (!basicMatch) return false;
 
@@ -711,9 +714,22 @@ useEffect(() => {
       .select();
 
     if (error) {
-      alert("Błąd zapisu taska: " + error.message);
-      return;
-    }
+  await logAppError(
+    "task_create_error",
+    error.message,
+    {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      selectedHotel,
+      selectedDepartment,
+      selectedTargetType,
+    },
+  );
+
+  alert("Błąd zapisu taska: " + error.message);
+  return;
+}
 
     const createdTask = data?.[0];
 
@@ -768,22 +784,54 @@ const uploadPromise = (async () => {
 
 // Pushe lecą równolegle do wszystkich odbiorców.
 const pushPromise = Promise.all(
-  targets.map((target) =>
-    fetch(
-      "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+  targets.map(async (target) => {
+    try {
+      const response = await fetch(
+        "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: target.id,
+            title: "Nowe zadanie",
+            body: taskText,
+          }),
         },
-        body: JSON.stringify({
-          userId: target.id,
-          title: "Nowe zadanie",
-          body: taskText,
-        }),
-      },
-    ),
-  ),
+      );
+
+      if (!response.ok) {
+        const responseText = await response.text();
+
+        await logAppError(
+          "task_push_error",
+          `Push zwrócił HTTP ${response.status}`,
+          {
+            taskId: createdTask.id,
+            recipientUserId: target.id,
+            status: response.status,
+            response: responseText,
+          },
+        );
+      }
+
+      return response;
+    } catch (pushError) {
+      await logAppError(
+        "task_push_error",
+        pushError instanceof Error
+          ? pushError.message
+          : "Nieznany błąd wysyłania push",
+        {
+          taskId: createdTask.id,
+          recipientUserId: target.id,
+        },
+      );
+
+      throw pushError;
+    }
+  }),
 );
 
 // Upload i push wykonują się równolegle.
@@ -1082,19 +1130,34 @@ results.forEach((result) => {
 }
 
     if (isHotelManager) {
-      const addressedToMe =
-        t.assigneeId === null || t.assigneeId === profile.id;
+  const isDirectTask = t.assigneeId === profile.id;
+  const isTeamTask = t.assigneeId === null;
 
-      return (
-        t.hotel_id === profile.hotel_id &&
-        t.departmentId === profile.department_id &&
-        addressedToMe &&
-        profile.status === "na stanowisku" &&
-        notAuthor &&
-        notArchived &&
-        !t.done
-      );
-    }
+  const generalAreaId = getGeneralAreaId(profile.hotel_id);
+
+  const taskAreaIds =
+    t.area_ids && t.area_ids.length > 0
+      ? t.area_ids
+      : t.area_id !== null
+        ? [t.area_id]
+        : [];
+
+  const areaMatches =
+    (generalAreaId !== null && taskAreaIds.includes(generalAreaId)) ||
+    taskAreaIds.some(
+      (areaId) => profile.current_area_ids?.includes(areaId) ?? false,
+    );
+
+  return (
+    t.hotel_id === profile.hotel_id &&
+    t.departmentId === profile.department_id &&
+    (isDirectTask || (isTeamTask && areaMatches)) &&
+    profile.status === "na stanowisku" &&
+    notAuthor &&
+    notArchived &&
+    !t.done
+  );
+}
 
    const generalAreaId = getGeneralAreaId(profile.hotel_id);
 
