@@ -670,6 +670,18 @@ useEffect(() => {
     );
 });
 
+if (
+  (isHousekeepingManagerTarget || isHotelManagerTarget) &&
+  targets.length === 0
+) {
+  alert(
+    isHotelManagerTarget
+      ? "Nie znaleziono konta kierowniczki pokojowych dla tego hotelu."
+      : "Nie znaleziono konta Managera pokojowych.",
+  );
+  return;
+}
+
     if (isHotelManagerTarget && targets.length > 1) {
   alert(
     "Znaleziono więcej niż jedną kierowniczkę pokojowych dla tego hotelu. Sprawdź role kont w Supabase.",
