@@ -52,26 +52,32 @@ export default function AreaPickerModal({
                 key={area.id}
                 type="button"
                 onClick={async () => {
-                  const current = profile.current_area_ids || []
+  const current = profile.current_area_ids || [];
 
-                  const updated = checked
-                    ? current.filter((id) => id !== area.id)
-                    : [...current, area.id]
+  const updated = checked
+    ? current.filter((id) => id !== area.id)
+    : [...current, area.id];
 
-                  await supabase
-                    .from("profiles")
-                    .update({
-                      current_area_ids: updated,
-                      current_area_id: updated[0] || null,
-                    })
-                    .eq("id", profile.id)
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      current_area_ids: updated,
+      current_area_id: updated[0] || null,
+    })
+    .eq("id", profile.id);
 
-                  setProfile({
-                    ...profile,
-                    current_area_ids: updated,
-                    current_area_id: updated[0] || null,
-                  })
-                }}
+  if (error) {
+    console.error("area update error:", error);
+    alert("Nie udało się zapisać wybranych pięter.");
+    return;
+  }
+
+  setProfile({
+    ...profile,
+    current_area_ids: updated,
+    current_area_id: updated[0] || null,
+  });
+}}
                 className={`w-full rounded-2xl border p-3 text-left text-sm font-semibold ${
                   checked
                     ? "border-emerald-400 bg-emerald-50 text-emerald-800"
