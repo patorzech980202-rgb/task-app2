@@ -629,17 +629,13 @@ useEffect(() => {
     const generalAreaId = getGeneralAreaId(targetHotelId);
     const targets = (candidates || []).filter((p: Profile) => {
   if (isHousekeepingManagerTarget) {
-  return (
-    p.role === "kierownik" &&
-    p.status === "na stanowisku"
-  );
+  return p.role === "kierownik";
 }
 
   if (isHotelManagerTarget) {
   return (
     p.role === "kierownik_hotelu" &&
-    p.hotel_id === targetHotelId &&
-    p.status === "na stanowisku"
+    p.hotel_id === targetHotelId
   );
 }
 
@@ -784,7 +780,9 @@ const uploadPromise = (async () => {
 
 // Pushe lecą równolegle do wszystkich odbiorców.
 const pushPromise = Promise.all(
-  targets.map(async (target) => {
+  targets
+    .filter((target) => target.status === "na stanowisku")
+    .map(async (target) => {
     try {
       const response = await fetch(
         "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
