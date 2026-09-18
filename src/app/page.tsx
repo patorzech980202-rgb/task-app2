@@ -871,29 +871,68 @@ results.forEach((result) => {
 };
 
   const markDone = async (id: number) => {
-    if (!profile) return;
+  if (!profile) return;
 
-    await supabase
-      .from("tasks")
-      .update({
-        done: true,
-        completedBy: profile.id,
-        completedAt: new Date().toISOString(),
-      })
-      .eq("id", id);
-  };
+  const completedAt = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      done: true,
+      completedBy: profile.id,
+      completedAt,
+    })
+    .eq("id", id);
+
+  if (error) {
+    await logAppError(
+      "task_complete_error",
+      error.message,
+      {
+        taskId: id,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      },
+    );
+
+    alert("Nie udało się oznaczyć zadania jako wykonane.");
+    return;
+  }
+};
 
   const archiveTask = async (id: number) => {
-    const task = tasks.find((t) => t.id === id);
-    if (!task || !profile) return;
+  const task = tasks.find((t) => t.id === id);
 
-    await supabase
-      .from("tasks")
-      .update({
-        archivedBy: [...(task.archivedBy || []), profile.id],
-      })
-      .eq("id", id);
-  };
+  if (!task || !profile) return;
+
+  const updatedArchivedBy = [
+    ...new Set([...(task.archivedBy || []), profile.id]),
+  ];
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      archivedBy: updatedArchivedBy,
+    })
+    .eq("id", id);
+
+  if (error) {
+    await logAppError(
+      "task_archive_error",
+      error.message,
+      {
+        taskId: id,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      },
+    );
+
+    alert("Nie udało się zarchiwizować zadania.");
+    return;
+  }
+};
 
   const cancelTask = async (id: number) => {
   if (!profile) return;
@@ -931,9 +970,20 @@ results.forEach((result) => {
     .eq("done", false);
 
   if (error) {
-    alert("Nie udało się wycofać zadania: " + error.message);
-    return;
-  }
+  await logAppError(
+    "task_cancel_error",
+    error.message,
+    {
+      taskId: id,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    },
+  );
+
+  alert("Nie udało się wycofać zadania: " + error.message);
+  return;
+}
 
   setTasks((prev) =>
     prev.map((t) =>
@@ -1008,25 +1058,41 @@ results.forEach((result) => {
 };
 
   const toggleStatus = async () => {
-    if (!profile) return;
+  if (!profile) return;
 
-    const newStatus: Status =
-      profile.status === "na stanowisku"
-        ? "poza stanowiskiem"
-        : "na stanowisku";
+  const newStatus: Status =
+    profile.status === "na stanowisku"
+      ? "poza stanowiskiem"
+      : "na stanowisku";
 
-    await supabase
-      .from("profiles")
-      .update({
-        status: newStatus,
-      })
-      .eq("id", profile.id);
-
-    setProfile({
-      ...profile,
+  const { error } = await supabase
+    .from("profiles")
+    .update({
       status: newStatus,
-    });
-  };
+    })
+    .eq("id", profile.id);
+
+  if (error) {
+    await logAppError(
+      "profile_status_error",
+      error.message,
+      {
+        requestedStatus: newStatus,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      },
+    );
+
+    alert("Nie udało się zmienić statusu.");
+    return;
+  }
+
+  setProfile({
+    ...profile,
+    status: newStatus,
+  });
+};
   const enablePush = async () => {
     try {
       if (!("serviceWorker" in navigator)) {
