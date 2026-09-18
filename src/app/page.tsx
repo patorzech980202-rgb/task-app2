@@ -1164,8 +1164,7 @@ results.forEach((result) => {
     (isDirectTask || (isTeamTask && areaMatches)) &&
     profile.status === "na stanowisku" &&
     notAuthor &&
-    notArchived &&
-    !t.done
+    notArchived
   );
 }
 
@@ -1255,6 +1254,7 @@ const areaMatches =
     t.hotel_id === profile.hotel_id &&
     t.departmentId === profile.department_id &&
     t.done &&
+    t.archivedBy?.includes(profile.id) &&
     (wasDirectlyAssignedToMe || wasCompletedByMe)
   );
 }
