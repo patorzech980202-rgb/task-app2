@@ -770,21 +770,51 @@ const uploadPromise = (async () => {
         contentType: file.type,
       });
 
-    if (uploadError) {
-      console.error("uploadError:", uploadError);
-      continue;
-    }
+   if (uploadError) {
+  await logAppError(
+    "task_attachment_upload_error",
+    uploadError.message,
+    {
+      taskId: createdTask.id,
+      fileName: file.name,
+      fileType: file.type,
+    },
+  );
 
-    const { data: publicUrlData } = supabase.storage
-      .from("task-images")
-      .getPublicUrl(filePath);
+  console.error("uploadError:", uploadError);
+  continue;
+}
 
-    await supabase.from("task_images").insert({
-      task_id: createdTask.id,
-      image_url: publicUrlData.publicUrl,
-      file_path: filePath,
-      file_type: file.type,
-    });
+const { data: publicUrlData } = supabase.storage
+  .from("task-images")
+  .getPublicUrl(filePath);
+
+    const { error: imageInsertError } = await supabase
+  .from("task_images")
+  .insert({
+    task_id: createdTask.id,
+    image_url: publicUrlData.publicUrl,
+    file_path: filePath,
+    file_type: file.type,
+  });
+
+if (imageInsertError) {
+  await logAppError(
+    "task_attachment_record_error",
+    imageInsertError.message,
+    {
+      taskId: createdTask.id,
+      fileName: file.name,
+      fileType: file.type,
+      filePath,
+      code: imageInsertError.code,
+      details: imageInsertError.details,
+      hint: imageInsertError.hint,
+    },
+  );
+
+  console.error("task_images insert error:", imageInsertError);
+}
   }
 
   await refreshTaskImages();
@@ -1034,9 +1064,19 @@ results.forEach((result) => {
     .select("id");
 
   if (error) {
-    alert("Błąd archiwizacji historycznej: " + error.message);
-    return;
-  }
+  await logAppError(
+    "history_archive_error",
+    error.message,
+    {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    },
+  );
+
+  alert("Błąd archiwizacji historycznej: " + error.message);
+  return;
+}
 
   const archivedIds = new Set((data || []).map((task) => task.id));
 
