@@ -62,6 +62,18 @@ type Area = {
   name: string;
 };
 
+type AppError = {
+  id: number;
+  user_id: string | null;
+  hotel_id: number | null;
+  department_id: number | null;
+  error_type: string;
+  message: string;
+  details: Record<string, unknown> | null;
+  page_path: string | null;
+  created_at: string;
+};
+
 type Status = "na stanowisku" | "poza stanowiskiem";
 
 type Profile = {
@@ -117,6 +129,8 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskImages, setTaskImages] = useState<TaskImage[]>([]);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
+  const [appErrors, setAppErrors] = useState<AppError[]>([]);
+  const [errorsLoading, setErrorsLoading] = useState(false);
   const [openCommentsTaskId, setOpenCommentsTaskId] = useState<number | null>(
   null,
 );
@@ -580,6 +594,27 @@ useEffect(() => {
   const isHotelManager = profile?.role === "kierownik_hotelu";
   const isManager = profile?.role === "kierownik";
   const isAdmin = profile?.role === "administrator"|| profile?.role === "admin";
+
+  const loadAppErrors = async () => {
+  if (!isAdmin) return;
+
+  setErrorsLoading(true);
+
+  const { data, error } = await supabase
+    .from("app_errors")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    console.error("Błąd pobierania app_errors:", error);
+    setErrorsLoading(false);
+    return;
+  }
+
+  setAppErrors((data || []) as AppError[]);
+  setErrorsLoading(false);
+};
 
  const addTask = async () => {
   if (isSending) return;
@@ -1834,6 +1869,87 @@ const areaMatches =
           setShowAreaPicker={setShowAreaPicker}
           getAreaName={getAreaName}
         />
+
+        {isAdmin && (
+  <div className="mb-4 rounded-3xl border border-red-200 bg-white p-4 shadow-sm">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <h2 className="font-bold text-stone-900">
+          ⚠️ Panel błędów
+        </h2>
+
+        <p className="mt-1 text-xs text-stone-500">
+          Ostatnie błędy zapisane przez aplikację
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={loadAppErrors}
+        disabled={errorsLoading}
+        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50"
+      >
+        {errorsLoading ? "Ładowanie..." : "Odśwież"}
+      </button>
+    </div>
+
+    <div className="mt-4 space-y-2">
+      {appErrors.length === 0 ? (
+        <p className="rounded-xl bg-stone-50 p-3 text-center text-sm text-stone-500">
+          Brak pobranych błędów.
+        </p>
+      ) : (
+        appErrors.map((appError) => (
+          <details
+            key={appError.id}
+            className="rounded-2xl border border-stone-200 bg-stone-50 p-3"
+          >
+            <summary className="cursor-pointer">
+              <div className="mt-2">
+                <p className="text-sm font-bold text-red-700">
+                  {appError.error_type}
+                </p>
+
+                <p className="mt-1 text-xs text-stone-600">
+                  {new Date(appError.created_at).toLocaleString("pl-PL", {
+                    timeZone: "Europe/Warsaw",
+                  })}
+                </p>
+
+                <p className="mt-1 text-sm text-stone-800">
+                  {appError.message}
+                </p>
+              </div>
+            </summary>
+
+            <div className="mt-3 border-t border-stone-200 pt-3 text-xs text-stone-600">
+              <p>
+                <strong>Hotel:</strong>{" "}
+                {getHotelName(appError.hotel_id)}
+              </p>
+
+              <p>
+                <strong>Użytkownik:</strong>{" "}
+                {getProfileName(appError.user_id)}
+              </p>
+
+              <p>
+                <strong>Ścieżka:</strong>{" "}
+                {appError.page_path || "Brak danych"}
+              </p>
+
+              {appError.details && (
+                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-xl bg-stone-900 p-3 text-[11px] text-white">
+                  {JSON.stringify(appError.details, null, 2)}
+                </pre>
+              )}
+            </div>
+          </details>
+        ))
+      )}
+    </div>
+  </div>
+)}
 
         {(isManager || isAdmin) && (
           <div className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
