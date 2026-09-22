@@ -56,6 +56,15 @@ type TaskComment = {
   created_at: string;
 };
 
+type TaskCommentImage = {
+  id: number;
+  comment_id: number;
+  image_url: string;
+  file_path: string | null;
+  file_type: string | null;
+  created_at: string;
+};
+
 type Area = {
   id: number;
   hotel_id: number;
@@ -129,6 +138,9 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskImages, setTaskImages] = useState<TaskImage[]>([]);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
+  const [taskCommentImages, setTaskCommentImages] = useState<TaskCommentImage[]>([]);
+  const [signedCommentImageUrls, setSignedCommentImageUrls] = useState<Record<number, string>>({});
+  const [selectedCommentImages, setSelectedCommentImages] = useState<File[]>([]);
   const [appErrors, setAppErrors] = useState<AppError[]>([]);
   const [errorsLoading, setErrorsLoading] = useState(false);
   const [openCommentsTaskId, setOpenCommentsTaskId] = useState<number | null>(
@@ -243,12 +255,50 @@ const refreshTaskComments = async () => {
   setTaskComments(data || []);
 };
 
+const refreshTaskCommentImages = async () => {
+  const { data, error } = await supabase
+    .from("task_comment_images")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Błąd pobierania zdjęć wiadomości:", error);
+    return;
+  }
+
+  const images = (data || []) as TaskCommentImage[];
+
+  setTaskCommentImages(images);
+
+  const urls: Record<number, string> = {};
+
+  for (const image of images) {
+    if (!image.file_path) {
+      urls[image.id] = image.image_url;
+      continue;
+    }
+
+    const { data: signedData, error: signedError } =
+      await supabase.storage
+        .from("task-images")
+        .createSignedUrl(image.file_path, 3600);
+
+    if (!signedError && signedData?.signedUrl) {
+      urls[image.id] = signedData.signedUrl;
+    } else {
+      urls[image.id] = image.image_url;
+    }
+  }
+
+  setSignedCommentImageUrls(urls);
+};
+
 const sendTaskComment = async (taskId: number) => {
   if (!profile) return;
 
-  const message = commentDraft.trim();
+ const message = commentDraft.trim();
 
-  if (!message) return;
+if (!message && selectedCommentImages.length === 0) return;
 
   const task = tasks.find((t) => t.id === taskId);
 
@@ -279,6 +329,77 @@ const sendTaskComment = async (taskId: number) => {
   alert("Nie udało się wysłać wiadomości: " + error.message);
   return;
 }
+
+const commentImagesToUpload = [...selectedCommentImages];
+
+for (const file of commentImagesToUpload) {
+  const fileExt = file.name.split(".").pop() || "jpg";
+
+  const fileName =
+    `${data.id}-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+
+  const filePath =
+    `task-comments/${data.id}/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("task-images")
+    .upload(filePath, file, {
+      contentType: file.type,
+    });
+
+  if (uploadError) {
+    await logAppError(
+      "task_comment_image_upload_error",
+      uploadError.message,
+      {
+        taskId,
+        commentId: data.id,
+        fileName: file.name,
+        fileType: file.type,
+      },
+    );
+
+    console.error("Błąd uploadu zdjęcia wiadomości:", uploadError);
+    continue;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from("task-images")
+    .getPublicUrl(filePath);
+
+  const { error: imageInsertError } = await supabase
+    .from("task_comment_images")
+    .insert({
+      comment_id: data.id,
+      image_url: publicUrlData.publicUrl,
+      file_path: filePath,
+      file_type: file.type,
+    });
+
+  if (imageInsertError) {
+    await logAppError(
+      "task_comment_image_record_error",
+      imageInsertError.message,
+      {
+        taskId,
+        commentId: data.id,
+        fileName: file.name,
+        filePath,
+        code: imageInsertError.code,
+        details: imageInsertError.details,
+        hint: imageInsertError.hint,
+      },
+    );
+
+    console.error(
+      "Błąd zapisu zdjęcia wiadomości:",
+      imageInsertError,
+    );
+  }
+}
+
+await refreshTaskCommentImages();
+setSelectedCommentImages([]);
 
   setTaskComments((prev) => {
     if (prev.some((comment) => comment.id === data.id)) {
@@ -325,7 +446,11 @@ const sendTaskComment = async (taskId: number) => {
           body: JSON.stringify({
             userId,
             title: "💬 Nowa wiadomość w zadaniu",
-            body: message,
+            body:
+  message ||
+  (selectedCommentImages.length > 1
+    ? `📷 Przesłano ${selectedCommentImages.length} zdjęcia w zadaniu`
+    : "📷 Przesłano zdjęcie w zadaniu"),
           }),
         },
       );
@@ -426,6 +551,7 @@ const sendTaskComment = async (taskId: number) => {
 
       await refreshTaskImages();
       await refreshTaskComments();
+      await refreshTaskCommentImages();
 
       const { data: allProfiles } = await supabase.from("profiles").select("*");
       setProfiles(allProfiles || []);
@@ -569,6 +695,29 @@ useEffect(() => {
 
   return () => {
     supabase.removeChannel(commentsChannel);
+  };
+}, [profile]);
+
+useEffect(() => {
+  if (!profile) return;
+
+  const commentImagesChannel = supabase
+    .channel("task-comment-images-live")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "task_comment_images",
+      },
+      () => {
+        refreshTaskCommentImages();
+      },
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(commentImagesChannel);
   };
 }, [profile]);
 
@@ -1558,6 +1707,15 @@ const areaMatches =
         comments.map((comment) => {
           const isOwnComment = comment.author_id === profile?.id;
 
+          const commentImages = taskCommentImages.filter(
+  (image) => image.comment_id === comment.id,
+);
+
+const commentImageUrls = commentImages.map(
+  (image) =>
+    signedCommentImageUrls[image.id] || image.image_url,
+);
+
           return (
             <div
               key={comment.id}
@@ -1580,9 +1738,58 @@ const areaMatches =
                   {getProfileName(comment.author_id)}
                 </p>
 
-                <p className="whitespace-pre-wrap text-sm">
-                  {comment.message}
-                </p>
+               
+  {comment.message && (
+  <p className="whitespace-pre-wrap text-sm">
+    {comment.message}
+  </p>
+)}
+
+{commentImageUrls.length > 0 && (
+  <div className="mt-2 grid grid-cols-3 gap-2">
+    {commentImageUrls.map((url, index) => (
+      <button
+        key={url}
+        type="button"
+        onClick={() => {
+          setPreviewImages(commentImageUrls);
+          setPreviewIndex(index);
+          setPreviewImage(url);
+        }}
+        className="overflow-hidden rounded-xl"
+      >
+        <img
+          src={url}
+          alt={`Zdjęcie ${index + 1}`}
+          className="h-20 w-full object-cover"
+        />
+      </button>
+    ))}
+  </div>
+)}
+
+{commentImageUrls.length > 0 && (
+  <div className="mt-2 grid grid-cols-3 gap-2">
+    {commentImageUrls.map((url, index) => (
+      <button
+        key={url}
+        type="button"
+        onClick={() => {
+          setPreviewImages(commentImageUrls);
+          setPreviewIndex(index);
+          setPreviewImage(url);
+        }}
+        className="overflow-hidden rounded-xl"
+      >
+        <img
+          src={url}
+          alt={`Zdjęcie ${index + 1}`}
+          className="h-20 w-full object-cover"
+        />
+      </button>
+    ))}
+  </div>
+)}
 
                 <p
                   className={`mt-1 text-[10px] ${
@@ -1604,24 +1811,56 @@ const areaMatches =
     </div>
 
     {mode !== "history" && (
-      <div className="mt-3 flex gap-2">
-        <textarea
-          value={commentDraft}
-          onChange={(e) => setCommentDraft(e.target.value)}
-          placeholder="Napisz wiadomość..."
-          rows={2}
-          className="min-h-[44px] flex-1 resize-none rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none"
-        />
+      <div className="mt-3">
+  <div className="flex gap-2">
+    <textarea
+      value={commentDraft}
+      onChange={(e) => setCommentDraft(e.target.value)}
+      placeholder="Napisz wiadomość..."
+      rows={2}
+      className="min-h-[44px] flex-1 resize-none rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none"
+    />
 
-        <button
-          type="button"
-          onClick={() => sendTaskComment(t.id)}
-          disabled={!commentDraft.trim()}
-          className="self-end rounded-xl bg-stone-900 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Wyślij
-        </button>
+    <button
+      type="button"
+      onClick={() => sendTaskComment(t.id)}
+      disabled={ !commentDraft.trim() && selectedCommentImages.length === 0 }
+      className="self-end rounded-xl bg-stone-900 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Wyślij
+    </button>
+  </div>
+
+  <div className="mt-2">
+    <label className="inline-flex cursor-pointer items-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 shadow-sm">
+      📷 Dodaj zdjęcia
+      <input
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+
+          const combined = [
+            ...selectedCommentImages,
+            ...files,
+          ].slice(0, 3);
+
+          setSelectedCommentImages(combined);
+
+          e.target.value = "";
+        }}
+      />
+    </label>
+
+    {selectedCommentImages.length > 0 && (
+      <div className="mt-2 text-xs text-stone-600">
+        Wybrano zdjęcia: {selectedCommentImages.length}/3
       </div>
+    )}
+  </div>
+</div>
     )}
   </div>
 )}
