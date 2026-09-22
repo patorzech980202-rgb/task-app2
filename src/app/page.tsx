@@ -1494,6 +1494,11 @@ const areaMatches =
               <p className="mt-1 text-xs font-medium text-blue-700">
                 🏨 {getHotelName(t.hotel_id)}
               </p>
+
+<p className="mt-1 text-xs text-stone-500">
+  👤 Wysłał: {getProfileName(t.authorId)}
+</p>
+
               {t.departmentId === 1 && getTaskAreaNames(t) && (
                 <p className="mt-1 text-xs font-medium text-stone-600">
                   📍 {getTaskAreaNames(t)}
