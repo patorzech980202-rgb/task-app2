@@ -1556,7 +1556,12 @@ const areaMatches =
       addressedToMe &&
       t.archivedBy?.includes(profile.id)
     );
-  });
+  }).sort((a, b) => {
+  const dateA = new Date(a.completedAt || a.createdAt).getTime();
+  const dateB = new Date(b.completedAt || b.createdAt).getTime();
+
+  return dateB - dateA;
+});
 
   const archivedSent = tasks.filter((t) => {
     if (!profile) return false;
@@ -1585,7 +1590,12 @@ const areaMatches =
 }
 
     return t.authorId === profile.id && t.archivedBy?.includes(profile.id);
-  });
+  }).sort((a, b) => {
+  const dateA = new Date(a.completedAt || a.createdAt).getTime();
+  const dateB = new Date(b.completedAt || b.createdAt).getTime();
+
+  return dateB - dateA;
+});
 
   const historyTasks = isAdmin
   ? tasks.filter((t) => t.history_archived_at !== null)
