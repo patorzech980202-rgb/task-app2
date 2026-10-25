@@ -34,6 +34,8 @@ type Task = {
   archivedBy: string[];
   area_id: number | null;
   area_ids: number[] | null;
+  room_id: number | null;
+  batch_id: number | null;
   history_archived_at: string | null;
   history_archived_by: string | null;
   cancelled_at: string | null;
@@ -69,6 +71,26 @@ type Area = {
   id: number;
   hotel_id: number;
   name: string;
+};
+
+type Room = {
+  id: number;
+  hotel_id: number;
+  room_number: string;
+  area_id: number;
+  active: boolean;
+  created_at: string;
+};
+
+type TaskBatch = {
+  id: number;
+  author_id: string;
+  hotel_id: number;
+  department_id: number;
+  title: string;
+  created_at: string;
+  archived_at: string | null;
+  archived_by: string | null;
 };
 
 type AppError = {
@@ -153,6 +175,10 @@ const [commentDraft, setCommentDraft] = useState("");
   >({});
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [taskBatches, setTaskBatches] = useState<TaskBatch[]>([]);
+  const [openTaskBatchId, setOpenTaskBatchId] = useState<number | null>(null);
+  const [bulkRoomInput, setBulkRoomInput] = useState("");
   const [newTask, setNewTask] = useState("");
   const [selectedAttachments, setSelectedAttachments] = useState<File[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -556,13 +582,101 @@ setSelectedCommentImages([]);
       const { data: allProfiles } = await supabase.from("profiles").select("*");
       setProfiles(allProfiles || []);
 
-      const { data: allAreas } = await supabase.from("areas").select("*");
+          const { data: allAreas } = await supabase.from("areas").select("*");
       setAreas(allAreas || []);
+      await refreshRooms();
+      await refreshTaskBatches();
       setLoading(false);
     };
 
+    const refreshRooms = async () => {
+  const { data, error } = await supabase
+    .from("rooms")
+    .select("*")
+    .eq("active", true)
+    .order("room_number", { ascending: true });
+
+  if (error) {
+    console.error("Błąd pobierania pokoi:", error);
+    return;
+  }
+
+  setRooms((data || []) as Room[]);
+};
+
     load();
   }, []);
+
+  const parseRoomNumbers = (input: string) => {
+  return Array.from(
+    new Set(
+      input
+        .split(/[\s,;]+/)
+        .map((room) => room.trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  );
+};
+
+const refreshTaskBatches = async () => {
+  const { data, error } = await supabase
+    .from("task_batches")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Błąd pobierania paczek zadań:", error);
+    return;
+  }
+
+  setTaskBatches((data || []) as TaskBatch[]);
+};
+
+const bulkRoomNumbers = parseRoomNumbers(bulkRoomInput);
+
+const matchedBulkRooms = rooms.filter((room) => {
+  if (!profile) return false;
+
+  return (
+    room.hotel_id === profile.hotel_id &&
+    bulkRoomNumbers.includes(room.room_number.trim().toUpperCase())
+  );
+});
+
+const matchedBulkRoomNumbers = new Set(
+  matchedBulkRooms.map((room) =>
+    room.room_number.trim().toUpperCase(),
+  ),
+);
+
+const unknownBulkRoomNumbers = bulkRoomNumbers.filter(
+  (roomNumber) => !matchedBulkRoomNumbers.has(roomNumber),
+);
+
+const bulkRoomAreaSummary = matchedBulkRooms.reduce<Record<number, number>>(
+  (summary, room) => {
+    summary[room.area_id] = (summary[room.area_id] || 0) + 1;
+    return summary;
+  },
+  {},
+);
+
+const getTaskBatchStats = (batchId: number) => {
+  const batchTasks = tasks.filter(
+    (task) => task.batch_id === batchId,
+  );
+
+  const total = batchTasks.length;
+  const completed = batchTasks.filter(
+    (task) => task.done,
+  ).length;
+
+  return {
+    total,
+    completed,
+    remaining: total - completed,
+  };
+};
 
   useEffect(() => {
   if (!profile) return;
@@ -791,14 +905,36 @@ useEffect(() => {
       selectedDepartment === 1 &&
       selectedRecipientType === "team";
 
+    const isBulkRoomTask =
+      profile.department_id === 3 &&
+      isHousekeepingTeamTarget &&
+      bulkRoomNumbers.length > 0;
+
+      if (isBulkRoomTask && unknownBulkRoomNumbers.length > 0) {
+  alert(
+    `Nie można wysłać zadań. Nie znaleziono pokoi: ${unknownBulkRoomNumbers.join(", ")}`,
+  );
+  return;
+}
+
+const housekeepingTargetAreaIds = isBulkRoomTask
+  ? Array.from(
+      new Set(matchedBulkRooms.map((room) => room.area_id)),
+    )
+  : selectedAreas;
+
     const targetDepartment = isHousekeepingManagerTarget
       ? 1
       : selectedDepartment;
 
-    if (isHousekeepingTeamTarget && selectedAreas.length === 0) {
-    alert("Wybierz co najmniej jeden obszar dla zadania pokojowych.");
-    return;
-    }
+    if (
+  isHousekeepingTeamTarget &&
+  !isBulkRoomTask &&
+  selectedAreas.length === 0
+) {
+  alert("Wybierz co najmniej jeden obszar dla zadania pokojowych.");
+  return;
+}
 
     const { data: candidates, error: candidatesError } = await supabase
       .from("profiles")
@@ -842,16 +978,16 @@ useEffect(() => {
   // będące aktualnie na stanowisku w tym hotelu.
   if (
   generalAreaId !== null &&
-  selectedAreas.includes(generalAreaId)
+  housekeepingTargetAreaIds.includes(generalAreaId)
 ) {
   return true;
 }
 
   // Zadanie na konkretne piętro dostają tylko osoby,
   // które mają obecnie zaznaczone to piętro.
- return selectedAreas.some(
+ return housekeepingTargetAreaIds.some(
   (areaId) => p.current_area_ids?.includes(areaId) ?? false,
-    );
+);
 });
 
 if (
@@ -878,13 +1014,66 @@ if (
         ? targets[0]
         : null;
 
-    const rows = [
+   let batchId: number | null = null;
+
+if (isBulkRoomTask) {
+  const { data: batchData, error: batchError } = await supabase
+    .from("task_batches")
+    .insert({
+      author_id: profile.id,
+      hotel_id: targetHotelId,
+      department_id: targetDepartment,
+      title: taskText,
+    })
+    .select("id")
+    .single();
+
+  if (batchError) {
+    await logAppError(
+      "task_batch_create_error",
+      batchError.message,
+      {
+        hotelId: targetHotelId,
+        departmentId: targetDepartment,
+        roomCount: matchedBulkRooms.length,
+      },
+    );
+
+    alert("Nie udało się utworzyć paczki zadań.");
+    return;
+  }
+
+  batchId = batchData.id;
+}
+
+const rows = isBulkRoomTask
+  ? matchedBulkRooms.map((room) => ({
+      title: `Pokój ${room.room_number}: ${taskText}`,
+      authorId: profile.id,
+      assigneeId: null,
+      departmentId: targetDepartment,
+      hotel_id: targetHotelId,
+
+      area_id: room.area_id,
+      area_ids: [room.area_id],
+
+      room_id: room.id,
+      batch_id: batchId,
+
+      done: false,
+      completedBy: null,
+      archivedBy: [],
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    }))
+  : [
       {
         title: taskText,
         authorId: profile.id,
         assigneeId: directAssignee?.id || null,
         departmentId: targetDepartment,
         hotel_id: targetHotelId,
+
         area_id: isHousekeepingTeamTarget
           ? selectedAreas[0] ?? null
           : null,
@@ -892,6 +1081,10 @@ if (
         area_ids: isHousekeepingTeamTarget
           ? selectedAreas
           : [],
+
+        room_id: null,
+        batch_id: null,
+
         done: false,
         completedBy: null,
         archivedBy: [],
@@ -923,6 +1116,10 @@ if (
   return;
 }
 
+if (isBulkRoomTask) {
+  await refreshTaskBatches();
+}
+
     const createdTask = data?.[0];
 
 // Task jest już zapisany w bazie.
@@ -933,6 +1130,8 @@ setSelectedTargetType("department");
 setSelectedRecipientType("team");
 setSelectedArea(null);
 setSelectedAreas([]);
+setBulkRoomInput("");
+setBulkRoomInput("");
 setShowForm(false);
 setIsSending(false);
 
@@ -1006,10 +1205,37 @@ if (imageInsertError) {
 
 // Pushe lecą równolegle do wszystkich odbiorców.
 const pushPromise = Promise.all(
-  targets
-    .filter((target) => target.status === "na stanowisku")
-    .map(async (target) => {
+  targets.map(async (target) => {
     try {
+      const targetAreaIds =
+        target.current_area_ids?.length
+          ? target.current_area_ids
+          : target.current_area_id !== null
+            ? [target.current_area_id]
+            : [];
+
+      const targetRoomTasks = isBulkRoomTask
+        ? rows.filter(
+            (row) =>
+              row.area_id !== null &&
+              targetAreaIds.includes(row.area_id),
+          )
+        : [];
+
+      // Przy paczce nie wysyłamy pushu osobie,
+      // która nie obsługuje żadnego z tych pięter.
+      if (isBulkRoomTask && targetRoomTasks.length === 0) {
+        return null;
+      }
+
+      const pushTitle = isBulkRoomTask
+        ? "Nowe zadania pokojowe"
+        : "Nowe zadanie";
+
+      const pushBody = isBulkRoomTask
+        ? `Do wykonania: ${targetRoomTasks.length} pokoi`
+        : taskText;
+
       const response = await fetch(
         "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
         {
@@ -1019,8 +1245,8 @@ const pushPromise = Promise.all(
           },
           body: JSON.stringify({
             userId: target.id,
-            title: "Nowe zadanie",
-            body: taskText,
+            title: pushTitle,
+            body: pushBody,
           }),
         },
       );
@@ -1032,7 +1258,8 @@ const pushPromise = Promise.all(
           "task_push_error",
           `Push zwrócił HTTP ${response.status}`,
           {
-            taskId: createdTask.id,
+            taskId: createdTask?.id ?? null,
+            batchId,
             recipientUserId: target.id,
             status: response.status,
             response: responseText,
@@ -1048,7 +1275,8 @@ const pushPromise = Promise.all(
           ? pushError.message
           : "Nieznany błąd wysyłania push",
         {
-          taskId: createdTask.id,
+          taskId: createdTask?.id ?? null,
+          batchId,
           recipientUserId: target.id,
         },
       );
@@ -1146,6 +1374,49 @@ results.forEach((result) => {
     alert("Nie udało się zarchiwizować zadania.");
     return;
   }
+};
+
+const archiveTaskBatch = async (batchId: number) => {
+  if (!profile) return;
+
+  const batch = taskBatches.find(
+    (item) => item.id === batchId,
+  );
+
+  if (!batch) return;
+
+  const stats = getTaskBatchStats(batchId);
+
+  if (stats.total === 0 || stats.completed < stats.total) {
+    alert("Nie można zarchiwizować paczki, dopóki wszystkie pokoje nie zostaną wykonane.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("task_batches")
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: profile.id,
+    })
+    .eq("id", batchId);
+
+  if (error) {
+    await logAppError(
+      "task_batch_archive_error",
+      error.message,
+      {
+        batchId,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      },
+    );
+
+    alert("Nie udało się zarchiwizować paczki.");
+    return;
+  }
+
+  await refreshTaskBatches();
 };
 
   const cancelTask = async (id: number) => {
@@ -1520,6 +1791,29 @@ const areaMatches =
     return t.authorId === profile.id && notArchived;
   });
 
+  const sentRegularTasks =
+  profile?.department_id === 3
+    ? sent.filter(
+        (task) =>
+          task.batch_id === null ||
+          task.authorId !== profile.id,
+      )
+    : sent;
+
+const allSentTaskBatches =
+  profile?.department_id === 3
+    ? taskBatches.filter(
+        (batch) => batch.author_id === profile.id,
+      )
+    : [];
+
+const sentTaskBatches = allSentTaskBatches.filter(
+  (batch) => batch.archived_at === null,
+);
+
+const archivedTaskBatches = allSentTaskBatches.filter(
+  (batch) => batch.archived_at !== null,
+);
   const archivedReceived = tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
@@ -1596,6 +1890,15 @@ const areaMatches =
 
   return dateB - dateA;
 });
+
+const archivedSentRegularTasks =
+  profile?.department_id === 3
+    ? archivedSent.filter(
+        (task) =>
+          task.batch_id === null ||
+          task.authorId !== profile.id,
+      )
+    : archivedSent;
 
   const historyTasks = isAdmin
   ? tasks.filter((t) => t.history_archived_at !== null)
@@ -2327,9 +2630,62 @@ const commentImageUrls = commentImages.map(
                     </select>
                   )}
 
+                  {profile?.department_id === 3 &&
+  selectedDepartment === 1 &&
+  selectedRecipientType === "team" && (
+    <div className="rounded-2xl border border-stone-300 bg-stone-50 p-3">
+      <p className="mb-2 text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
+        Numery pokoi
+      </p>
+
+      <textarea
+        className="min-h-24 w-full rounded-xl border border-stone-300 bg-white p-3 text-sm text-stone-900 outline-none"
+        placeholder="Np. 101, 102, 205, 307"
+        value={bulkRoomInput}
+        onChange={(e) => setBulkRoomInput(e.target.value)}
+      />
+
+      {bulkRoomNumbers.length > 0 && (
+        <div className="mt-3 space-y-1 text-xs text-stone-600">
+          <p>
+            Wpisano: <strong>{bulkRoomNumbers.length}</strong>
+          </p>
+
+          <p>
+            Rozpoznano: <strong>{matchedBulkRooms.length}</strong>
+          </p>
+
+          {Object.entries(bulkRoomAreaSummary).map(([areaId, count]) => {
+  const area = areas.find(
+    (item) => item.id === Number(areaId),
+  );
+
+  return (
+    <p key={areaId}>
+      {area?.name || `Obszar ${areaId}`}:{" "}
+      <strong>{count} pokoi</strong>
+    </p>
+  );
+})}
+
+          {unknownBulkRoomNumbers.length > 0 && (
+            <p className="text-red-600">
+              Nie znaleziono:{" "}
+              <strong>{unknownBulkRoomNumbers.join(", ")}</strong>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )}
+
                   {/* 4. OBSZARY - tylko dla zespołu pokojowych */}
-                  {selectedDepartment === 1 &&
-                    selectedRecipientType === "team" && (
+                    {selectedDepartment === 1 &&
+                      selectedRecipientType === "team" &&
+                      !(
+                        profile?.department_id === 3 &&
+                        bulkRoomNumbers.length > 0
+                      ) && (
                       <div className="rounded-2xl border border-stone-300 bg-stone-50 p-3">
                         <p className="mb-2 text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
                           Wybierz obszary
@@ -2480,10 +2836,151 @@ const commentImageUrls = commentImages.map(
           className="mb-2 mt-3 flex w-full items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 text-left font-bold text-stone-900 shadow-sm"
         >
           <span>📤 Wysłane</span>
-          <Badge count={sent.length} />
+          <Badge
+          count={sentRegularTasks.length + sentTaskBatches.length}/>
         </button>
 
-        {openSections.wysłane && renderTasks(sent, "sent")}
+        {openSections.wysłane && (
+  <>
+    {sentTaskBatches.map((batch) => {
+  const stats = getTaskBatchStats(batch.id);
+
+  const batchTasks = tasks
+    .filter((task) => task.batch_id === batch.id)
+    .sort((a, b) => {
+      const roomA =
+        rooms.find((room) => room.id === a.room_id)?.room_number || "";
+
+      const roomB =
+        rooms.find((room) => room.id === b.room_id)?.room_number || "";
+
+      return roomA.localeCompare(roomB, "pl", {
+        numeric: true,
+      });
+    });
+
+  return (
+        <div
+          key={`batch-${batch.id}`}
+          className="mb-3 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
+                📦 Zadanie zbiorcze
+              </p>
+
+              <h3 className="mt-1 font-bold text-stone-900">
+                {batch.title}
+              </h3>
+            </div>
+
+            <div className="rounded-xl bg-stone-100 px-3 py-2 text-sm font-bold text-stone-900">
+              {stats.completed}/{stats.total}
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <div className="h-2 overflow-hidden rounded-full bg-stone-200">
+              <div
+                className="h-full rounded-full bg-stone-900"
+                style={{
+                  width:
+                    stats.total > 0
+                      ? `${(stats.completed / stats.total) * 100}%`
+                      : "0%",
+                }}
+              />
+            </div>
+
+            <div className="mt-2 flex justify-between text-xs text-stone-500">
+              <span>
+                Wykonano: <strong>{stats.completed}</strong>
+              </span>
+
+              <span>
+                Pozostało: <strong>{stats.remaining}</strong>
+              </span>
+            </div>
+          </div>
+
+<button
+  type="button"
+  onClick={() =>
+    setOpenTaskBatchId((prev) =>
+      prev === batch.id ? null : batch.id,
+    )
+  }
+  className="mt-3 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-700"
+>
+  {openTaskBatchId === batch.id
+    ? "Ukryj pokoje"
+    : "Pokaż pokoje"}
+</button>
+
+{openTaskBatchId === batch.id && (
+  <div className="mt-3 space-y-2">
+    {batchTasks.map((task) => {
+      const room = rooms.find(
+        (item) => item.id === task.room_id,
+      );
+
+      const area = areas.find(
+        (item) => item.id === task.area_id,
+      );
+
+      return (
+        <div
+          key={task.id}
+          className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm"
+        >
+          <div>
+            <span className="font-semibold text-stone-900">
+              Pokój {room?.room_number || "—"}
+            </span>
+
+            {area && (
+              <span className="ml-2 text-xs text-stone-500">
+                {area.name}
+              </span>
+            )}
+          </div>
+
+          <span
+            className={
+              task.done
+                ? "font-semibold text-green-700"
+                : "font-semibold text-amber-700"
+            }
+          >
+            {task.done ? "✅ Wykonane" : "⏳ Oczekuje"}
+          </span>
+        </div>
+      );
+    })}
+  </div>
+)}
+
+{stats.total > 0 && stats.completed === stats.total && (
+  <button
+    type="button"
+    onClick={() => archiveTaskBatch(batch.id)}
+    className="mt-3 w-full rounded-xl bg-stone-900 px-3 py-2 text-sm font-bold text-white"
+  >
+    Archiwizuj
+  </button>
+)}
+
+          <p className="mt-3 text-xs text-stone-400">
+            {new Date(batch.created_at).toLocaleString("pl-PL")}
+          </p>
+        </div>
+      );
+    })}
+
+    {renderTasks(sentRegularTasks, "sent")}
+  </>
+)}
 
         <button
           onClick={() => toggleSection("archiwum")}
@@ -2504,7 +3001,112 @@ const commentImageUrls = commentImages.map(
               Wysłane
             </div>
 
-            {renderTasks(archivedSent, "archived")}
+            <>
+ {archivedTaskBatches.map((batch) => {
+  const stats = getTaskBatchStats(batch.id);
+
+  const batchTasks = tasks
+    .filter((task) => task.batch_id === batch.id)
+    .sort((a, b) => {
+      const roomA =
+        rooms.find((room) => room.id === a.room_id)?.room_number || "";
+
+      const roomB =
+        rooms.find((room) => room.id === b.room_id)?.room_number || "";
+
+      return roomA.localeCompare(roomB, "pl", {
+        numeric: true,
+      });
+    });
+
+  return (
+      <div
+        key={`archived-batch-${batch.id}`}
+        className="mb-3 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
+              📦 Zadanie zbiorcze
+            </p>
+
+            <h3 className="mt-1 font-bold text-stone-900">
+              {batch.title}
+            </h3>
+          </div>
+
+          <div className="rounded-xl bg-green-50 px-3 py-2 text-sm font-bold text-green-700">
+            {stats.completed}/{stats.total}
+          </div>
+        </div>
+
+        <p className="mt-3 text-sm font-semibold text-green-700">
+          ✅ Wszystkie pokoje wykonane
+        </p>
+
+<button
+  type="button"
+  onClick={() =>
+    setOpenTaskBatchId((prev) =>
+      prev === batch.id ? null : batch.id,
+    )
+  }
+  className="mt-3 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-700"
+>
+  {openTaskBatchId === batch.id
+    ? "Ukryj pokoje"
+    : "Pokaż pokoje"}
+</button>
+
+{openTaskBatchId === batch.id && (
+  <div className="mt-3 space-y-2">
+    {batchTasks.map((task) => {
+      const room = rooms.find(
+        (item) => item.id === task.room_id,
+      );
+
+      const area = areas.find(
+        (item) => item.id === task.area_id,
+      );
+
+      return (
+        <div
+          key={task.id}
+          className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm"
+        >
+          <div>
+            <span className="font-semibold text-stone-900">
+              Pokój {room?.room_number || "—"}
+            </span>
+
+            {area && (
+              <span className="ml-2 text-xs text-stone-500">
+                {area.name}
+              </span>
+            )}
+          </div>
+
+          <span className="font-semibold text-green-700">
+            ✅ Wykonane
+          </span>
+        </div>
+      );
+    })}
+  </div>
+)}
+
+        <p className="mt-2 text-xs text-stone-400">
+          Zarchiwizowano:{" "}
+          {batch.archived_at
+            ? new Date(batch.archived_at).toLocaleString("pl-PL")
+            : "—"}
+        </p>
+      </div>
+    );
+  })}
+
+  {renderTasks(archivedSentRegularTasks, "archived")}
+</>
           </>
         )}
         {isAdmin && renderHistoryArchive()}
