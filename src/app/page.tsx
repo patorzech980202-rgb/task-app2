@@ -135,6 +135,7 @@ export default function Home() {
   const [selectedHotel, setSelectedHotel] = useState(1);
   const [filterHotel, setFilterHotel] = useState(0);
   const [showForm, setShowForm] = useState(false);
+  const [showTaskAreas, setShowTaskAreas] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [showAreaPicker, setShowAreaPicker] = useState(false);
   const [openSections, setOpenSections] = useState({
@@ -1130,6 +1131,7 @@ setSelectedTargetType("department");
 setSelectedRecipientType("team");
 setSelectedArea(null);
 setSelectedAreas([]);
+setShowTaskAreas(false);
 setBulkRoomInput("");
 setBulkRoomInput("");
 setShowForm(false);
@@ -1689,11 +1691,10 @@ const archiveTaskBatch = async (batchId: number) => {
       );
     }
 
-    if (isManager) {
+if (isManager) {
   return (
     t.departmentId === profile.department_id &&
     (filterHotel === 0 || t.hotel_id === filterHotel) &&
-    profile.status === "na stanowisku" &&
     notAuthor &&
     notArchived &&
     !t.done
@@ -1793,18 +1794,25 @@ const areaMatches =
 
   const sentRegularTasks =
   profile?.department_id === 3
-    ? sent.filter(
-        (task) =>
-          task.batch_id === null ||
-          task.authorId !== profile.id,
-      )
+    ? sent.filter((task) => task.batch_id === null)
     : sent;
 
 const allSentTaskBatches =
   profile?.department_id === 3
-    ? taskBatches.filter(
-        (batch) => batch.author_id === profile.id,
-      )
+    ? taskBatches.filter((batch) => {
+        const authorProfile = profiles.find(
+          (p) => p.id === batch.author_id,
+        );
+
+        if (profile.role === "kierownik") {
+          return (
+            authorProfile?.department_id === 3 &&
+            (filterHotel === 0 || batch.hotel_id === filterHotel)
+          );
+        }
+
+        return batch.author_id === profile.id;
+      })
     : [];
 
 const sentTaskBatches = allSentTaskBatches.filter(
@@ -1893,11 +1901,7 @@ const archivedTaskBatches = allSentTaskBatches.filter(
 
 const archivedSentRegularTasks =
   profile?.department_id === 3
-    ? archivedSent.filter(
-        (task) =>
-          task.batch_id === null ||
-          task.authorId !== profile.id,
-      )
+    ? archivedSent.filter((task) => task.batch_id === null)
     : archivedSent;
 
   const historyTasks = isAdmin
@@ -2635,7 +2639,7 @@ const commentImageUrls = commentImages.map(
   selectedRecipientType === "team" && (
     <div className="rounded-2xl border border-stone-300 bg-stone-50 p-3">
       <p className="mb-2 text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
-        Numery pokoi
+        Numery pokoi wyjzadowych
       </p>
 
       <textarea
@@ -2686,42 +2690,60 @@ const commentImageUrls = commentImages.map(
                         profile?.department_id === 3 &&
                         bulkRoomNumbers.length > 0
                       ) && (
-                      <div className="rounded-2xl border border-stone-300 bg-stone-50 p-3">
-                        <p className="mb-2 text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
-                          Wybierz obszary
-                        </p>
+                    <div className="rounded-2xl border border-stone-300 bg-stone-50 p-3">
+  <button
+    type="button"
+    onClick={() => setShowTaskAreas((prev) => !prev)}
+    className="flex w-full items-center justify-between text-left"
+  >
+    <span className="text-xs font-bold uppercase tracking-[0.15em] text-stone-500">
+      Obszary / piętra
+    </span>
 
-                        <div className="space-y-2">
-                          {areas
-                            .filter(
-                              (area) =>
-                                area.hotel_id ===
-                                (isManager || isAdmin
-                                  ? selectedHotel
-                                  : profile.hotel_id),
-                            )
-                            .map((area) => (
-                              <label
-                                key={area.id}
-                                className="flex items-center gap-3 rounded-xl bg-white px-3 py-2 text-sm text-stone-900"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedAreas.includes(area.id)}
-                                  onChange={() => {
-                                    setSelectedAreas((prev) =>
-                                      prev.includes(area.id)
-                                        ? prev.filter((id) => id !== area.id)
-                                        : [...prev, area.id],
-                                    );
-                                  }}
-                                />
+    <span className="text-sm text-stone-500">
+      {showTaskAreas ? "▲" : "▼"}
+    </span>
+  </button>
 
-                                <span>{area.name}</span>
-                              </label>
-                            ))}
-                        </div>
-                      </div>
+  {selectedAreas.length > 0 && (
+    <p className="mt-2 text-xs text-stone-600">
+      Wybrano: <strong>{selectedAreas.length}</strong>
+    </p>
+  )}
+
+  {showTaskAreas && (
+    <div className="mt-3 space-y-2">
+      {areas
+        .filter(
+          (area) =>
+            area.hotel_id ===
+            (isManager || isAdmin
+              ? selectedHotel
+              : profile.hotel_id),
+        )
+        .map((area) => (
+          <label
+            key={area.id}
+            className="flex items-center gap-3 rounded-xl bg-white px-3 py-2 text-sm text-stone-900"
+          >
+            <input
+              type="checkbox"
+              checked={selectedAreas.includes(area.id)}
+              onChange={() => {
+                setSelectedAreas((prev) =>
+                  prev.includes(area.id)
+                    ? prev.filter((id) => id !== area.id)
+                    : [...prev, area.id],
+                );
+              }}
+            />
+
+            <span>{area.name}</span>
+          </label>
+        ))}
+    </div>
+  )}
+</div>
                     )}
                 </>
               )}
@@ -2873,6 +2895,13 @@ const commentImageUrls = commentImages.map(
               <h3 className="mt-1 font-bold text-stone-900">
                 {batch.title}
               </h3>
+              <p className="mt-1 text-xs text-stone-500">
+                👤 Wysłał: {getProfileName(batch.author_id)}
+              </p>
+
+              <p className="mt-1 text-xs text-stone-500">
+                🏨 {getHotelName(batch.hotel_id)}
+              </p>
             </div>
 
             <div className="rounded-xl bg-stone-100 px-3 py-2 text-sm font-bold text-stone-900">
@@ -2961,7 +2990,9 @@ const commentImageUrls = commentImages.map(
   </div>
 )}
 
-{stats.total > 0 && stats.completed === stats.total && (
+{batch.author_id === profile?.id &&
+  stats.total > 0 &&
+  stats.completed === stats.total && (
   <button
     type="button"
     onClick={() => archiveTaskBatch(batch.id)}
@@ -3033,6 +3064,13 @@ const commentImageUrls = commentImages.map(
             <h3 className="mt-1 font-bold text-stone-900">
               {batch.title}
             </h3>
+                        <p className="mt-1 text-xs text-stone-500">
+              👤 Wysłał: {getProfileName(batch.author_id)}
+            </p>
+
+            <p className="mt-1 text-xs text-stone-500">
+              🏨 {getHotelName(batch.hotel_id)}
+            </p>
           </div>
 
           <div className="rounded-xl bg-green-50 px-3 py-2 text-sm font-bold text-green-700">
