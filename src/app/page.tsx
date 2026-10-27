@@ -1789,7 +1789,19 @@ const areaMatches =
   );
 }
 
-    return t.authorId === profile.id && notArchived;
+    if (
+  profile.department_id === 3 &&
+  profile.role === "pracownik"
+) {
+  return (
+    authorProfile?.department_id === 3 &&
+    authorProfile?.hotel_id === profile.hotel_id &&
+    t.hotel_id === profile.hotel_id &&
+    notArchived
+  );
+}
+
+return t.authorId === profile.id && notArchived;
   });
 
   const sentRegularTasks =
@@ -1811,7 +1823,10 @@ const allSentTaskBatches =
           );
         }
 
-        return batch.author_id === profile.id;
+                return (
+          authorProfile?.department_id === 3 &&
+          batch.hotel_id === profile.hotel_id
+        );
       })
     : [];
 
@@ -1891,7 +1906,19 @@ const archivedTaskBatches = allSentTaskBatches.filter(
   );
 }
 
-    return t.authorId === profile.id && t.archivedBy?.includes(profile.id);
+    if (
+  profile.department_id === 3 &&
+  profile.role === "pracownik"
+) {
+  return (
+    authorProfile?.department_id === 3 &&
+    authorProfile?.hotel_id === profile.hotel_id &&
+    t.hotel_id === profile.hotel_id &&
+    t.done
+  );
+}
+
+return t.authorId === profile.id && t.archivedBy?.includes(profile.id);
   }).sort((a, b) => {
   const dateA = new Date(a.completedAt || a.createdAt).getTime();
   const dateB = new Date(b.completedAt || b.createdAt).getTime();
