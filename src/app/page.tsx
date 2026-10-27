@@ -573,21 +573,36 @@ setSelectedCommentImages([]);
 
       setProfile(prof || null);
 
-      const { data } = await supabase.from("tasks").select("*");
-      setTasks(data || []);
+      const [
+  { data: tasksData },
+  { data: allProfiles },
+  { data: allAreas },
+] = await Promise.all([
+  supabase.from("tasks").select("*"),
+  supabase.from("profiles").select("*"),
+  supabase.from("areas").select("*"),
+]);
 
-      await refreshTaskImages();
-      await refreshTaskComments();
-      await refreshTaskCommentImages();
+setTasks(tasksData || []);
+setProfiles(allProfiles || []);
+setAreas(allAreas || []);
 
-      const { data: allProfiles } = await supabase.from("profiles").select("*");
-      setProfiles(allProfiles || []);
+setLoading(false);
 
-          const { data: allAreas } = await supabase.from("areas").select("*");
-      setAreas(allAreas || []);
-      await refreshRooms();
-      await refreshTaskBatches();
-      setLoading(false);
+const backgroundLoads = [
+  refreshTaskImages(),
+];
+
+if (prof?.department_id === 3) {
+  backgroundLoads.push(
+    refreshRooms(),
+    refreshTaskBatches(),
+  );
+}
+
+void Promise.all(backgroundLoads).catch((error) => {
+  console.error("Błąd ładowania danych dodatkowych:", error);
+});
     };
 
     const refreshRooms = async () => {
@@ -3017,7 +3032,14 @@ const commentImageUrls = commentImages.map(
   </div>
 )}
 
-{batch.author_id === profile?.id &&
+{(
+  batch.author_id === profile?.id ||
+  (
+    profile?.department_id === 3 &&
+    profile?.role === "pracownik" &&
+    batch.hotel_id === profile.hotel_id
+  )
+) &&
   stats.total > 0 &&
   stats.completed === stats.total && (
   <button
