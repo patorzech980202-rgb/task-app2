@@ -591,6 +591,8 @@ setLoading(false);
 
 const backgroundLoads = [
   refreshTaskImages(),
+  refreshTaskComments(),
+  refreshTaskCommentImages(),
 ];
 
 if (prof?.department_id === 3) {
