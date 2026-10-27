@@ -240,27 +240,27 @@ const [commentDraft, setCommentDraft] = useState("");
   };
 
   const loadSignedImageUrls = async (images: TaskImage[]) => {
-    const urls: Record<number, string> = {};
-
-    for (const img of images) {
+  const entries = await Promise.all(
+    images.map(async (img) => {
       if (!img.file_path) {
-        urls[img.id] = img.image_url;
-        continue;
+        return [img.id, img.image_url] as const;
       }
 
       const { data, error } = await supabase.storage
         .from("task-images")
         .createSignedUrl(img.file_path, 3600);
 
-      if (!error && data?.signedUrl) {
-        urls[img.id] = data.signedUrl;
-      } else {
-        urls[img.id] = img.image_url;
-      }
-    }
+      return [
+        img.id,
+        !error && data?.signedUrl
+          ? data.signedUrl
+          : img.image_url,
+      ] as const;
+    }),
+  );
 
-    setSignedImageUrls(urls);
-  };
+  setSignedImageUrls(Object.fromEntries(entries));
+};
 
   const refreshTaskImages = async () => {
     const { data: images } = await supabase.from("task_images").select("*");
@@ -297,27 +297,27 @@ const refreshTaskCommentImages = async () => {
 
   setTaskCommentImages(images);
 
-  const urls: Record<number, string> = {};
+  const entries = await Promise.all(
+    images.map(async (image) => {
+      if (!image.file_path) {
+        return [image.id, image.image_url] as const;
+      }
 
-  for (const image of images) {
-    if (!image.file_path) {
-      urls[image.id] = image.image_url;
-      continue;
-    }
+      const { data: signedData, error: signedError } =
+        await supabase.storage
+          .from("task-images")
+          .createSignedUrl(image.file_path, 3600);
 
-    const { data: signedData, error: signedError } =
-      await supabase.storage
-        .from("task-images")
-        .createSignedUrl(image.file_path, 3600);
+      return [
+        image.id,
+        !signedError && signedData?.signedUrl
+          ? signedData.signedUrl
+          : image.image_url,
+      ] as const;
+    }),
+  );
 
-    if (!signedError && signedData?.signedUrl) {
-      urls[image.id] = signedData.signedUrl;
-    } else {
-      urls[image.id] = image.image_url;
-    }
-  }
-
-  setSignedCommentImageUrls(urls);
+  setSignedCommentImageUrls(Object.fromEntries(entries));
 };
 
 const sendTaskComment = async (taskId: number) => {
@@ -565,24 +565,24 @@ setSelectedCommentImages([]);
         return;
       }
 
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", auth.user.id)
-        .single();
-
-      setProfile(prof || null);
-
       const [
+  { data: prof },
   { data: tasksData },
   { data: allProfiles },
   { data: allAreas },
 ] = await Promise.all([
+  supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", auth.user.id)
+    .single(),
+
   supabase.from("tasks").select("*"),
   supabase.from("profiles").select("*"),
   supabase.from("areas").select("*"),
 ]);
 
+setProfile(prof || null);
 setTasks(tasksData || []);
 setProfiles(allProfiles || []);
 setAreas(allAreas || []);
