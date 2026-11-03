@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import AppHeader from "../components/layout/AppHeader";
 import AreaPickerModal from "../components/modals/AreaPickerModal";
@@ -162,6 +162,19 @@ export default function Home() {
   const [taskImages, setTaskImages] = useState<TaskImage[]>([]);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
   const [taskCommentImages, setTaskCommentImages] = useState<TaskCommentImage[]>([]);
+
+const commentImagesByCommentId = useMemo(() => {
+  const map = new Map<number, TaskCommentImage[]>();
+
+  for (const image of taskCommentImages) {
+    const current = map.get(image.comment_id) || [];
+    current.push(image);
+    map.set(image.comment_id, current);
+  }
+
+  return map;
+}, [taskCommentImages]);
+
   const [signedCommentImageUrls, setSignedCommentImageUrls] = useState<Record<number, string>>({});
   const [selectedCommentImages, setSelectedCommentImages] = useState<File[]>([]);
   const [appErrors, setAppErrors] = useState<AppError[]>([]);
@@ -177,6 +190,47 @@ const [commentDraft, setCommentDraft] = useState("");
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
+
+const profilesById = useMemo(
+  () => new Map(profiles.map((item) => [item.id, item])),
+  [profiles],
+);
+
+const areasById = useMemo(
+  () => new Map(areas.map((item) => [item.id, item])),
+  [areas],
+);
+
+const roomsById = useMemo(
+  () => new Map(rooms.map((item) => [item.id, item])),
+  [rooms],
+);
+
+const taskImagesByTaskId = useMemo(() => {
+  const map = new Map<number, TaskImage[]>();
+
+  for (const image of taskImages) {
+    const current = map.get(image.task_id) || [];
+    current.push(image);
+    map.set(image.task_id, current);
+  }
+
+  return map;
+}, [taskImages]);
+
+const taskCommentsByTaskId = useMemo(() => {
+  const map = new Map<number, TaskComment[]>();
+
+  for (const comment of taskComments) {
+    const current = map.get(comment.task_id) || [];
+    current.push(comment);
+    map.set(comment.task_id, current);
+  }
+
+  return map;
+}, [taskComments]);
+
+
   const [taskBatches, setTaskBatches] = useState<TaskBatch[]>([]);
   const [openTaskBatchId, setOpenTaskBatchId] = useState<number | null>(null);
   const [bulkRoomInput, setBulkRoomInput] = useState("");
@@ -186,10 +240,41 @@ const [commentDraft, setCommentDraft] = useState("");
   const [previewImages, setPreviewImages] = useState<string[]>([]);
   const [previewIndex, setPreviewIndex] = useState(0);
   const touchStartX = useRef<number | null>(null);
+
+  const pendingTaskInsertsRef = useRef<Task[]>([]);
+
+const taskInsertFlushTimerRef =
+  useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadedTaskIdsRef = useRef<Set<number>>(new Set());
+  const loadedCommentIdsRef = useRef<Set<number>>(new Set());
+
   const [loading, setLoading] = useState(true);
+
+  const [visibleTaskLimits, setVisibleTaskLimits] = useState<
+  Record<string, number>
+>({
+  received: 30,
+  sent: 30,
+  archived: 30,
+  archivedSent: 30,
+  history: 30,
+});
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  useEffect(() => {
+  loadedTaskIdsRef.current = new Set(
+    tasks.map((task) => task.id),
+  );
+}, [tasks]);
+
+useEffect(() => {
+  loadedCommentIdsRef.current = new Set(
+    taskComments.map((comment) => comment.id),
+  );
+}, [taskComments]);
 
   const getHotelName = (hotelId: number | null) => {
     return hotels.find((h) => h.id === hotelId)?.name || "Brak hotelu";
@@ -208,10 +293,10 @@ const [commentDraft, setCommentDraft] = useState("");
   };
 
   const getAreaName = (areaId: number | null) => {
-    if (!areaId) return "Bez obszaru";
+  if (!areaId) return "Bez obszaru";
 
-    return areas.find((area) => area.id === areaId)?.name || "Bez obszaru";
-  };
+  return areasById.get(areaId)?.name || "Bez obszaru";
+};
   const getTaskAreaNames = (task: Task) => {
   const areaIds =
     task.area_ids && task.area_ids.length > 0
@@ -221,23 +306,23 @@ const [commentDraft, setCommentDraft] = useState("");
         : [];
 
   return areaIds
-    .map((areaId) => areas.find((area) => area.id === areaId)?.name)
+    .map((areaId) => areasById.get(areaId)?.name)
     .filter(Boolean)
     .join(", ");
 };
   const getProfileName = (profileId: string | null) => {
-    if (!profileId) return "Nieznany pracownik";
+  if (!profileId) return "Nieznany pracownik";
 
-    const user = profiles.find((p) => p.id === profileId);
+  const user = profilesById.get(profileId);
 
-    if (!user) return "Nieznany pracownik";
+  if (!user) return "Nieznany pracownik";
 
-    return `${user.name}${user.surname ? " " + user.surname : ""}`;
-  };
+  return `${user.name}${user.surname ? " " + user.surname : ""}`;
+};
 
-  const getTaskImages = (taskId: number) => {
-    return taskImages.filter((img) => img.task_id === taskId);
-  };
+ const getTaskImages = (taskId: number) => {
+  return taskImagesByTaskId.get(taskId) || [];
+};
 
   const loadSignedImageUrls = async (images: TaskImage[]) => {
   const entries = await Promise.all(
@@ -262,16 +347,77 @@ const [commentDraft, setCommentDraft] = useState("");
   setSignedImageUrls(Object.fromEntries(entries));
 };
 
-  const refreshTaskImages = async () => {
-    const { data: images } = await supabase.from("task_images").select("*");
-    setTaskImages(images || []);
-    await loadSignedImageUrls(images || []);
-  };
+  const refreshTaskImages = async (taskIds?: number[]) => {
+  if (taskIds && taskIds.length === 0) {
+    setTaskImages([]);
+    setSignedImageUrls({});
+    return;
+  }
 
-const refreshTaskComments = async () => {
+  let query = supabase
+    .from("task_images")
+    .select("*");
+
+  if (taskIds) {
+    query = query.in("task_id", taskIds);
+  }
+
+  const { data: images, error } = await query;
+
+  if (error) {
+    console.error("Błąd pobierania zdjęć zadań:", error);
+    return;
+  }
+
+  setTaskImages(images || []);
+  await loadSignedImageUrls(images || []);
+};
+
+const refreshTaskComments = async (
+  taskId?: number,
+): Promise<TaskComment[]> => {
+  let query = supabase
+    .from("task_comments")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (typeof taskId === "number") {
+    query = query.eq("task_id", taskId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("Błąd pobierania wiadomości:", error);
+    return [];
+  }
+
+  const comments = (data || []) as TaskComment[];
+
+  if (typeof taskId === "number") {
+    setTaskComments((prev) => [
+      ...prev.filter((comment) => comment.task_id !== taskId),
+      ...comments,
+    ]);
+  } else {
+    setTaskComments(comments);
+  }
+
+  return comments;
+};
+
+const refreshTaskCommentsForTasks = async (
+  taskIds: number[],
+) => {
+  if (taskIds.length === 0) {
+    setTaskComments([]);
+    return;
+  }
+
   const { data, error } = await supabase
     .from("task_comments")
     .select("*")
+    .in("task_id", taskIds)
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -279,14 +425,22 @@ const refreshTaskComments = async () => {
     return;
   }
 
-  setTaskComments(data || []);
+  setTaskComments((data || []) as TaskComment[]);
 };
 
-const refreshTaskCommentImages = async () => {
-  const { data, error } = await supabase
+const refreshTaskCommentImages = async (commentIds?: number[]) => {
+  if (commentIds && commentIds.length === 0) return;
+
+  let query = supabase
     .from("task_comment_images")
     .select("*")
     .order("created_at", { ascending: true });
+
+  if (commentIds) {
+    query = query.in("comment_id", commentIds);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Błąd pobierania zdjęć wiadomości:", error);
@@ -295,7 +449,18 @@ const refreshTaskCommentImages = async () => {
 
   const images = (data || []) as TaskCommentImage[];
 
-  setTaskCommentImages(images);
+  if (commentIds) {
+    const commentIdSet = new Set(commentIds);
+
+    setTaskCommentImages((prev) => [
+      ...prev.filter(
+        (image) => !commentIdSet.has(image.comment_id),
+      ),
+      ...images,
+    ]);
+  } else {
+    setTaskCommentImages(images);
+  }
 
   const entries = await Promise.all(
     images.map(async (image) => {
@@ -317,7 +482,16 @@ const refreshTaskCommentImages = async () => {
     }),
   );
 
-  setSignedCommentImageUrls(Object.fromEntries(entries));
+  const newSignedUrls = Object.fromEntries(entries);
+
+  if (commentIds) {
+    setSignedCommentImageUrls((prev) => ({
+      ...prev,
+      ...newSignedUrls,
+    }));
+  } else {
+    setSignedCommentImageUrls(newSignedUrls);
+  }
 };
 
 const sendTaskComment = async (taskId: number) => {
@@ -565,24 +739,44 @@ setSelectedCommentImages([]);
         return;
       }
 
-      const [
-  { data: prof },
+const { data: prof } = await supabase
+  .from("profiles")
+  .select("*")
+  .eq("id", auth.user.id)
+  .single();
+
+setProfile(prof || null);
+
+let tasksQuery = supabase
+  .from("tasks")
+  .select("*");
+
+const isLoadedUserAdmin =
+  prof?.role === "admin" ||
+  prof?.role === "administrator";
+
+if (!isLoadedUserAdmin) {
+  tasksQuery = tasksQuery.is("history_archived_at", null);
+}
+
+const isHotelScopedUser =
+  prof?.role === "pracownik" ||
+  prof?.role === "kierownik_hotelu";
+
+if (isHotelScopedUser && prof?.hotel_id) {
+  tasksQuery = tasksQuery.eq("hotel_id", prof.hotel_id);
+}
+
+const [
   { data: tasksData },
   { data: allProfiles },
   { data: allAreas },
 ] = await Promise.all([
-  supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", auth.user.id)
-    .single(),
-
-  supabase.from("tasks").select("*"),
+  tasksQuery,
   supabase.from("profiles").select("*"),
   supabase.from("areas").select("*"),
 ]);
 
-setProfile(prof || null);
 setTasks(tasksData || []);
 setProfiles(allProfiles || []);
 setAreas(allAreas || []);
@@ -590,9 +784,12 @@ setAreas(allAreas || []);
 setLoading(false);
 
 const backgroundLoads = [
-  refreshTaskImages(),
-  refreshTaskComments(),
-  refreshTaskCommentImages(),
+  refreshTaskImages(
+  (tasksData || []).map((task) => task.id),
+),
+ refreshTaskCommentsForTasks(
+  (tasksData || []).map((task) => task.id),
+),
 ];
 
 if (prof?.department_id === 3) {
@@ -757,40 +954,100 @@ const getTaskBatchStats = (batchId: number) => {
   useEffect(() => {
     if (!profile) return;
 
+    const isHotelScopedRealtimeUser =
+  profile.role === "pracownik" ||
+  profile.role === "kierownik_hotelu";
+
+const taskRealtimeConfig = isHotelScopedRealtimeUser
+  ? {
+      event: "*" as const,
+      schema: "public" as const,
+      table: "tasks",
+      filter: `hotel_id=eq.${profile.hotel_id}`,
+    }
+  : {
+      event: "*" as const,
+      schema: "public" as const,
+      table: "tasks",
+    };
+
     const channel = supabase
       .channel("tasks-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
-        (payload) => {
-          const newRow = payload.new as Task;
-          const oldRow = payload.old as Task;
+       (payload) => {
+  const newRow = payload.new as Task;
+  const oldRow = payload.old as Task;
 
-          setTasks((prev) => {
-            if (payload.eventType === "INSERT") {
-              if (newRow.assigneeId === profile.id) {
-                playSound();
-                vibrate();
-              }
+  if (payload.eventType === "INSERT") {
+    if (newRow.assigneeId === profile.id) {
+      playSound();
+      vibrate();
+    }
 
-              setTimeout(() => {
-                refreshTaskImages();
-              }, 1500);
+    pendingTaskInsertsRef.current.push(newRow);
 
-              return [...prev, newRow];
-            }
+    if (taskInsertFlushTimerRef.current) {
+      clearTimeout(taskInsertFlushTimerRef.current);
+    }
 
-            if (payload.eventType === "UPDATE") {
-              return prev.map((t) => (t.id === newRow.id ? newRow : t));
-            }
+    taskInsertFlushTimerRef.current = setTimeout(() => {
+      const pendingTasks = pendingTaskInsertsRef.current;
 
-            if (payload.eventType === "DELETE") {
-              return prev.filter((t) => t.id !== oldRow.id);
-            }
+      pendingTaskInsertsRef.current = [];
+      taskInsertFlushTimerRef.current = null;
 
-            return prev;
-          });
-        },
+      setTasks((prev) => {
+        const existingIds = new Set(
+          prev.map((task) => task.id),
+        );
+
+        const newTasks = pendingTasks.filter(
+          (task) => !existingIds.has(task.id),
+        );
+
+        if (newTasks.length === 0) {
+          return prev;
+        }
+
+        return [...prev, ...newTasks];
+      });
+    }, 200);
+
+    return;
+  }
+
+  if (payload.eventType === "UPDATE") {
+    const pendingIndex =
+      pendingTaskInsertsRef.current.findIndex(
+        (task) => task.id === newRow.id,
+      );
+
+    if (pendingIndex !== -1) {
+      pendingTaskInsertsRef.current[pendingIndex] = newRow;
+    }
+
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === newRow.id ? newRow : task,
+      ),
+    );
+
+    return;
+  }
+
+  if (payload.eventType === "DELETE") {
+    pendingTaskInsertsRef.current =
+      pendingTaskInsertsRef.current.filter(
+        (task) => task.id !== oldRow.id,
+      );
+
+    setTasks((prev) =>
+      prev.filter((task) => task.id !== oldRow.id),
+    );
+  }
+},
       )
       .subscribe();
 
@@ -798,6 +1055,65 @@ const getTaskBatchStats = (batchId: number) => {
       supabase.removeChannel(channel);
     };
   }, [profile]);
+
+  useEffect(() => {
+  if (!profile) return;
+
+  const taskImagesChannel = supabase
+    .channel("task-images-live")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "task_images",
+      },
+      (payload) => {
+        const newImage = payload.new as TaskImage;
+
+        if (!loadedTaskIdsRef.current.has(newImage.task_id)) {
+  return;
+}
+
+        setTaskImages((prev) => {
+          if (prev.some((image) => image.id === newImage.id)) {
+            return prev;
+          }
+
+          return [...prev, newImage];
+        });
+
+        void (async () => {
+          if (!newImage.file_path) {
+            setSignedImageUrls((prev) => ({
+              ...prev,
+              [newImage.id]: newImage.image_url,
+            }));
+
+            return;
+          }
+
+          const { data: signedData, error: signedError } =
+            await supabase.storage
+              .from("task-images")
+              .createSignedUrl(newImage.file_path, 3600);
+
+          setSignedImageUrls((prev) => ({
+            ...prev,
+            [newImage.id]:
+              !signedError && signedData?.signedUrl
+                ? signedData.signedUrl
+                : newImage.image_url,
+          }));
+        })();
+      },
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(taskImagesChannel);
+  };
+}, [profile]);
 
 useEffect(() => {
   if (!profile) return;
@@ -813,6 +1129,10 @@ useEffect(() => {
       },
       (payload) => {
         const newComment = payload.new as TaskComment;
+
+        if (!loadedTaskIdsRef.current.has(newComment.task_id)) {
+  return;
+}
 
         setTaskComments((prev) => {
           if (prev.some((comment) => comment.id === newComment.id)) {
@@ -842,8 +1162,43 @@ useEffect(() => {
         schema: "public",
         table: "task_comment_images",
       },
-      () => {
-        refreshTaskCommentImages();
+      (payload) => {
+        const newImage = payload.new as TaskCommentImage;
+        if (!loadedCommentIdsRef.current.has(newImage.comment_id)) {
+  return;
+}
+
+        setTaskCommentImages((prev) => {
+          if (prev.some((image) => image.id === newImage.id)) {
+            return prev;
+          }
+
+          return [...prev, newImage];
+        });
+
+        void (async () => {
+          if (!newImage.file_path) {
+            setSignedCommentImageUrls((prev) => ({
+              ...prev,
+              [newImage.id]: newImage.image_url,
+            }));
+
+            return;
+          }
+
+          const { data: signedData, error: signedError } =
+            await supabase.storage
+              .from("task-images")
+              .createSignedUrl(newImage.file_path, 3600);
+
+          setSignedCommentImageUrls((prev) => ({
+            ...prev,
+            [newImage.id]:
+              !signedError && signedData?.signedUrl
+                ? signedData.signedUrl
+                : newImage.image_url,
+          }));
+        })();
       },
     )
     .subscribe();
@@ -1064,7 +1419,24 @@ if (isBulkRoomTask) {
   batchId = batchData.id;
 }
 
-const rows = isBulkRoomTask
+type TaskInsertRow = {
+  title: string;
+  authorId: string;
+  assigneeId: string | null;
+  departmentId: number;
+  hotel_id: number | null;
+  area_id: number | null;
+  area_ids: number[];
+  room_id: number | null;
+  batch_id: number | null;
+  done: boolean;
+  completedBy: string | null;
+  archivedBy: string[];
+  createdAt: string;
+  completedAt: string | null;
+};
+
+const rows: TaskInsertRow[] = isBulkRoomTask
   ? matchedBulkRooms.map((room) => ({
       title: `Pokój ${room.room_number}: ${taskText}`,
       authorId: profile.id,
@@ -1690,7 +2062,7 @@ const archiveTaskBatch = async (batchId: number) => {
     }
   };
 
-  const received = tasks.filter((t) => {
+  const received = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
     if (t.cancelled_at) return false;
@@ -1774,16 +2146,24 @@ const areaMatches =
       profile.status === "na stanowisku" &&
       notArchived 
     );
-  });
+  }), [
+  tasks,
+  profile,
+  isAdmin,
+  isManager,
+  isHotelManager,
+  filterHotel,
+  areas,
+]);
 
-  const sent = tasks.filter((t) => {
+  const sent = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
     if (t.cancelled_at) return false;
 
     const notArchived = !t.archivedBy?.includes(profile.id);
 
-    const authorProfile = profiles.find((p) => p.id === t.authorId);
+    const authorProfile = profilesById.get(t.authorId);
 
     if (isAdmin) {
       return notArchived;
@@ -1819,7 +2199,15 @@ const areaMatches =
 }
 
 return t.authorId === profile.id && notArchived;
-  });
+ }), [
+  tasks,
+  profile,
+  isAdmin,
+  isManager,
+  isHotelManager,
+  filterHotel,
+  profilesById,
+]);
 
   const sentRegularTasks =
   profile?.department_id === 3
@@ -1854,7 +2242,7 @@ const sentTaskBatches = allSentTaskBatches.filter(
 const archivedTaskBatches = allSentTaskBatches.filter(
   (batch) => batch.archived_at !== null,
 );
-  const archivedReceived = tasks.filter((t) => {
+  const archivedReceived = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
 
@@ -1895,13 +2283,20 @@ const archivedTaskBatches = allSentTaskBatches.filter(
   const dateB = new Date(b.completedAt || b.createdAt).getTime();
 
   return dateB - dateA;
-});
+}), [
+  tasks,
+  profile,
+  isAdmin,
+  isManager,
+  isHotelManager,
+  filterHotel,
+]);
 
-  const archivedSent = tasks.filter((t) => {
+  const archivedSent = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
 
-    const authorProfile = profiles.find((p) => p.id === t.authorId);
+    const authorProfile = profilesById.get(t.authorId);
 
     if (isAdmin) {
       return t.done;
@@ -1941,7 +2336,15 @@ return t.authorId === profile.id && t.archivedBy?.includes(profile.id);
   const dateB = new Date(b.completedAt || b.createdAt).getTime();
 
   return dateB - dateA;
-});
+}), [
+  tasks,
+  profile,
+  isAdmin,
+  isManager,
+  isHotelManager,
+  filterHotel,
+  profilesById,
+]);
 
 const archivedSentRegularTasks =
   profile?.department_id === 3
@@ -1974,9 +2377,7 @@ const archivedSentRegularTasks =
     return list.map((t) => {
       const attachments = getTaskImages(t.id);
 
-      const comments = taskComments.filter(
-  (comment) => comment.task_id === t.id,
-);
+   const comments = taskCommentsByTaskId.get(t.id) || [];
 
       const imagesOnly = attachments.filter(
         (item) => !item.file_type || item.file_type.startsWith("image/"),
@@ -2043,11 +2444,22 @@ const archivedSentRegularTasks =
 
               <button
   type="button"
-  onClick={() =>
-    setOpenCommentsTaskId((prev) =>
-      prev === t.id ? null : t.id,
-    )
+onClick={async () => {
+  if (openCommentsTaskId === t.id) {
+    setOpenCommentsTaskId(null);
+    return;
   }
+
+  const commentsForTask =
+    await refreshTaskComments(t.id);
+
+  await refreshTaskCommentImages(
+    commentsForTask.map((comment) => comment.id),
+  );
+
+  setOpenCommentsTaskId(t.id);
+}}
+
   className="mt-3 flex w-full items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm font-semibold text-stone-700"
 >
   <span>💬 Wiadomości</span>
@@ -2068,9 +2480,8 @@ const archivedSentRegularTasks =
         comments.map((comment) => {
           const isOwnComment = comment.author_id === profile?.id;
 
-          const commentImages = taskCommentImages.filter(
-  (image) => image.comment_id === comment.id,
-);
+          const commentImages =
+  commentImagesByCommentId.get(comment.id) || [];
 
 const commentImageUrls = commentImages.map(
   (image) =>
@@ -2895,7 +3306,29 @@ const commentImageUrls = commentImages.map(
           <Badge count={received.length} />
         </button>
 
-        {openSections.otrzymane && renderTasks(received, "received")}
+        {openSections.otrzymane && (
+  <>
+    {renderTasks(
+      received.slice(0, visibleTaskLimits.received),
+      "received",
+    )}
+
+    {received.length > visibleTaskLimits.received && (
+      <button
+        type="button"
+        onClick={() =>
+          setVisibleTaskLimits((prev) => ({
+            ...prev,
+            received: prev.received + 30,
+          }))
+        }
+        className="mb-3 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700"
+      >
+        Pokaż kolejne 30
+      </button>
+    )}
+  </>
+)}
 
         <button
           onClick={() => toggleSection("wysłane")}
@@ -2915,10 +3348,10 @@ const commentImageUrls = commentImages.map(
     .filter((task) => task.batch_id === batch.id)
     .sort((a, b) => {
       const roomA =
-        rooms.find((room) => room.id === a.room_id)?.room_number || "";
+       roomsById.get(a.room_id ?? -1)?.room_number || ""
 
       const roomB =
-        rooms.find((room) => room.id === b.room_id)?.room_number || "";
+        roomsById.get(b.room_id ?? -1)?.room_number || ""
 
       return roomA.localeCompare(roomB, "pl", {
         numeric: true,
@@ -2994,9 +3427,10 @@ const commentImageUrls = commentImages.map(
 {openTaskBatchId === batch.id && (
   <div className="mt-3 space-y-2">
     {batchTasks.map((task) => {
-      const room = rooms.find(
-        (item) => item.id === task.room_id,
-      );
+      const room =
+  task.room_id !== null
+    ? roomsById.get(task.room_id)
+    : undefined;
 
       const area = areas.find(
         (item) => item.id === task.area_id,
@@ -3060,7 +3494,27 @@ const commentImageUrls = commentImages.map(
       );
     })}
 
-    {renderTasks(sentRegularTasks, "sent")}
+    <>
+  {renderTasks(
+    sentRegularTasks.slice(0, visibleTaskLimits.sent),
+    "sent",
+  )}
+
+  {sentRegularTasks.length > visibleTaskLimits.sent && (
+    <button
+      type="button"
+      onClick={() =>
+        setVisibleTaskLimits((prev) => ({
+          ...prev,
+          sent: prev.sent + 30,
+        }))
+      }
+      className="mb-3 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700"
+    >
+      Pokaż kolejne 30
+    </button>
+  )}
+</>
   </>
 )}
 
@@ -3077,7 +3531,27 @@ const commentImageUrls = commentImages.map(
               Otrzymane
             </div>
 
-            {renderTasks(archivedReceived, "archived")}
+            <>
+  {renderTasks(
+    archivedReceived.slice(0, visibleTaskLimits.archived),
+    "archived",
+  )}
+
+  {archivedReceived.length > visibleTaskLimits.archived && (
+    <button
+      type="button"
+      onClick={() =>
+        setVisibleTaskLimits((prev) => ({
+          ...prev,
+          archived: prev.archived + 30,
+        }))
+      }
+      className="mb-3 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700"
+    >
+      Pokaż kolejne 30
+    </button>
+  )}
+</>
 
             <div className="mb-2 mt-4 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
               Wysłane
@@ -3091,10 +3565,10 @@ const commentImageUrls = commentImages.map(
     .filter((task) => task.batch_id === batch.id)
     .sort((a, b) => {
       const roomA =
-        rooms.find((room) => room.id === a.room_id)?.room_number || "";
+        roomsById.get(a.room_id ?? -1)?.room_number || ""
 
       const roomB =
-        rooms.find((room) => room.id === b.room_id)?.room_number || "";
+       roomsById.get(b.room_id ?? -1)?.room_number || ""
 
       return roomA.localeCompare(roomB, "pl", {
         numeric: true,
@@ -3150,9 +3624,10 @@ const commentImageUrls = commentImages.map(
 {openTaskBatchId === batch.id && (
   <div className="mt-3 space-y-2">
     {batchTasks.map((task) => {
-      const room = rooms.find(
-        (item) => item.id === task.room_id,
-      );
+     const room =
+  task.room_id !== null
+    ? roomsById.get(task.room_id)
+    : undefined;
 
       const area = areas.find(
         (item) => item.id === task.area_id,
@@ -3194,7 +3669,27 @@ const commentImageUrls = commentImages.map(
     );
   })}
 
-  {renderTasks(archivedSentRegularTasks, "archived")}
+  <>
+  {renderTasks(
+    archivedSentRegularTasks.slice(0, visibleTaskLimits.archivedSent),
+    "archived",
+  )}
+
+  {archivedSentRegularTasks.length > visibleTaskLimits.archivedSent && (
+    <button
+      type="button"
+      onClick={() =>
+        setVisibleTaskLimits((prev) => ({
+          ...prev,
+          archivedSent: prev.archivedSent + 30,
+        }))
+      }
+      className="mb-3 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700"
+    >
+      Pokaż kolejne 30
+    </button>
+  )}
+</>
 </>
           </>
         )}
