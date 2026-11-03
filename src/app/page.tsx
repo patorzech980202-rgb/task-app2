@@ -2226,12 +2226,13 @@ const areaMatches =
     }
 
     if (isManager) {
-      return (
-        authorProfile?.department_id === profile.department_id &&
-        (filterHotel === 0 || t.hotel_id === filterHotel) &&
-        notArchived
-      );
-    }
+  return (
+    authorProfile?.department_id === profile.department_id &&
+    (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    notArchived &&
+    (profile.department_id !== 3 || !t.done)
+  );
+}
 
     if (isHotelManager) {
   return (
@@ -2251,6 +2252,7 @@ const areaMatches =
     authorProfile?.hotel_id === profile.hotel_id &&
     t.hotel_id === profile.hotel_id &&
     notArchived
+    && !t.done
   );
 }
 
@@ -2291,13 +2293,25 @@ const allSentTaskBatches =
       })
     : [];
 
-const sentTaskBatches = allSentTaskBatches.filter(
-  (batch) => batch.archived_at === null,
-);
+const sentTaskBatches = allSentTaskBatches.filter((batch) => {
+  const stats = getTaskBatchStats(batch.id);
 
-const archivedTaskBatches = allSentTaskBatches.filter(
-  (batch) => batch.archived_at !== null,
-);
+  const isCompleted =
+    stats.total > 0 &&
+    stats.remaining === 0;
+
+  return batch.archived_at === null && !isCompleted;
+});
+
+const archivedTaskBatches = allSentTaskBatches.filter((batch) => {
+  const stats = getTaskBatchStats(batch.id);
+
+  const isCompleted =
+    stats.total > 0 &&
+    stats.remaining === 0;
+
+  return batch.archived_at !== null || isCompleted;
+});
   const archivedReceived = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
