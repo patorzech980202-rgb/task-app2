@@ -1743,28 +1743,84 @@ results.forEach((result) => {
     ...new Set([...(task.archivedBy || []), profile.id]),
   ];
 
-  const { error } = await supabase
-    .from("tasks")
-    .update({
-      archivedBy: updatedArchivedBy,
-    })
-    .eq("id", id);
+  let lastError: unknown = null;
 
-  if (error) {
-    await logAppError(
-      "task_archive_error",
-      error.message,
-      {
-        taskId: id,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-      },
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const { error } = await supabase
+        .from("tasks")
+        .update({
+          archivedBy: updatedArchivedBy,
+        })
+        .eq("id", id);
+
+      if (!error) {
+        setTasks((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  archivedBy: updatedArchivedBy,
+                }
+              : item,
+          ),
+        );
+
+        return;
+      }
+
+      lastError = error;
+
+      const isNetworkError = error.message
+        ?.toLowerCase()
+        .includes("failed to fetch");
+
+      if (!isNetworkError || attempt === 2) {
+        break;
+      }
+    } catch (error) {
+      lastError = error;
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      const isNetworkError = message
+        .toLowerCase()
+        .includes("failed to fetch");
+
+      if (!isNetworkError || attempt === 2) {
+        break;
+      }
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 700),
     );
-
-    alert("Nie udało się zarchiwizować zadania.");
-    return;
   }
+
+  const errorMessage =
+    lastError instanceof Error
+      ? lastError.message
+      : typeof lastError === "object" &&
+          lastError !== null &&
+          "message" in lastError
+        ? String(lastError.message)
+        : String(lastError || "Nieznany błąd");
+
+  await logAppError(
+    "task_archive_error",
+    errorMessage,
+    {
+      taskId: id,
+      details: lastError,
+    },
+  );
+
+  alert(
+    "Nie udało się zarchiwizować zadania. Sprawdź połączenie z internetem i spróbuj ponownie.",
+  );
 };
 
 const archiveTaskBatch = async (batchId: number) => {
