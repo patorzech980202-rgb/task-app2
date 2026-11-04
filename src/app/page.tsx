@@ -253,6 +253,12 @@ const taskInsertFlushTimerRef =
   const loadedTaskIdsRef = useRef<Set<number>>(new Set());
   const loadedCommentIdsRef = useRef<Set<number>>(new Set());
 
+  const loadedTaskImageTaskIdsRef =
+  useRef<Set<number>>(new Set());
+
+  const loadingTaskImageTaskIdsRef =
+  useRef<Set<number>>(new Set());
+
   const [loading, setLoading] = useState(true);
   const [archiveSearch, setArchiveSearch] = useState("");
 
@@ -329,53 +335,103 @@ useEffect(() => {
   return taskImagesByTaskId.get(taskId) || [];
 };
 
-  const loadSignedImageUrls = async (images: TaskImage[]) => {
+const loadTaskImagesForTasks = async (
+  taskIds: number[],
+  force = false,
+) => {
+  const idsToLoad = Array.from(
+    new Set(taskIds),
+  ).filter(
+  (taskId) =>
+    !loadingTaskImageTaskIdsRef.current.has(taskId) &&
+    (
+      force ||
+      !loadedTaskImageTaskIdsRef.current.has(taskId)
+    ),
+);
+
+  if (idsToLoad.length === 0) return;
+
+  idsToLoad.forEach((taskId) => {
+    loadingTaskImageTaskIdsRef.current.add(taskId);
+  });
+
+  const { data, error } = await supabase
+    .from("task_images")
+    .select("*")
+    .in("task_id", idsToLoad);
+
+  if (error) {
+    idsToLoad.forEach((taskId) => {
+      loadingTaskImageTaskIdsRef.current.delete(taskId);
+    });
+
+    console.error(
+      "Błąd pobierania zdjęć widocznych zadań:",
+      error,
+    );
+
+    return;
+  }
+
+  const images = (data || []) as TaskImage[];
+
+  idsToLoad.forEach((taskId) => {
+    loadingTaskImageTaskIdsRef.current.delete(taskId);
+    loadedTaskImageTaskIdsRef.current.add(taskId);
+  });
+
+  setTaskImages((prev) => {
+    const existingIds = new Set(
+      prev.map((image) => image.id),
+    );
+
+    const newImages = images.filter(
+      (image) => !existingIds.has(image.id),
+    );
+
+    if (newImages.length === 0) {
+      return prev;
+    }
+
+    return [...prev, ...newImages];
+  });
+
   const entries = await Promise.all(
-    images.map(async (img) => {
-      if (!img.file_path) {
-        return [img.id, img.image_url] as const;
+    images.map(async (image) => {
+      if (!image.file_path) {
+        return [
+          image.id,
+          image.image_url,
+        ] as const;
       }
 
-      const { data, error } = await supabase.storage
+      const {
+        data: signedData,
+        error: signedError,
+      } = await supabase.storage
         .from("task-images")
-        .createSignedUrl(img.file_path, 3600);
+        .createSignedUrl(
+          image.file_path,
+          3600,
+        );
 
       return [
-        img.id,
-        !error && data?.signedUrl
-          ? data.signedUrl
-          : img.image_url,
+        image.id,
+        !signedError && signedData?.signedUrl
+          ? signedData.signedUrl
+          : image.image_url,
       ] as const;
     }),
   );
 
-  setSignedImageUrls(Object.fromEntries(entries));
-};
+  const newSignedUrls =
+    Object.fromEntries(entries);
 
-  const refreshTaskImages = async (taskIds?: number[]) => {
-  if (taskIds && taskIds.length === 0) {
-    setTaskImages([]);
-    setSignedImageUrls({});
-    return;
-  }
-
-  let query = supabase
-    .from("task_images")
-    .select("*");
-
-  if (taskIds) {
-    query = query.in("task_id", taskIds);
-  }
-
-  const { data: images, error } = await query;
-
-  if (error) {
-    console.error("Błąd pobierania zdjęć zadań:", error);
-    return;
-  }
-
-  setTaskImages(images || []);
-  await loadSignedImageUrls(images || []);
+  setSignedImageUrls((prev) => ({
+    ...prev,
+    ...newSignedUrls,
+  }));
 };
 
 const refreshTaskComments = async (
@@ -886,9 +942,6 @@ role: prof?.role ?? null,
 setLoading(false);
 
 const backgroundLoads = [
-  refreshTaskImages(
-  (tasksData || []).map((task) => task.id),
-),
  refreshTaskCommentCounts(
   (tasksData || []).map((task) => task.id),
 ),
@@ -1103,8 +1156,8 @@ const taskRealtimeConfig = isHotelScopedRealtimeUser
     const channel = supabase
       .channel("tasks-live")
       .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "tasks" },
+  "postgres_changes",
+  taskRealtimeConfig,
        (payload) => {
   const newRow = payload.new as Task;
   const oldRow = payload.old as Task;
@@ -1764,7 +1817,10 @@ if (imageInsertError) {
 }
   }
 
-  await refreshTaskImages();
+  await loadTaskImagesForTasks(
+  [createdTask.id],
+  true,
+);
 })();
 
 // Pushe lecą równolegle do wszystkich odbiorców.
@@ -2749,6 +2805,63 @@ const archivedSentRegularTasks =
   const historyTasks = isAdmin
   ? tasks.filter((t) => t.history_archived_at !== null)
   : [];
+
+  const visibleTaskImageIds = useMemo(() => {
+  const ids = new Set<number>();
+
+  const addVisibleTasks = (
+    list: Task[],
+    limit: number,
+  ) => {
+    list
+      .slice(0, limit)
+      .forEach((task) => ids.add(task.id));
+  };
+
+  addVisibleTasks(
+    received,
+    visibleTaskLimits.received,
+  );
+
+  addVisibleTasks(
+    sentRegularTasks,
+    visibleTaskLimits.sent,
+  );
+
+  addVisibleTasks(
+    filteredArchivedReceived,
+    visibleTaskLimits.archived,
+  );
+
+  addVisibleTasks(
+    filteredArchivedSentRegularTasks,
+    visibleTaskLimits.archivedSent,
+  );
+
+  // Administrator nadal może oglądać archiwum historyczne.
+  // Na razie zachowujemy tam pełną zgodność.
+  if (isAdmin) {
+    historyTasks.forEach((task) =>
+      ids.add(task.id),
+    );
+  }
+
+  return Array.from(ids);
+}, [
+  received,
+  sentRegularTasks,
+  filteredArchivedReceived,
+  filteredArchivedSentRegularTasks,
+  historyTasks,
+  isAdmin,
+  visibleTaskLimits,
+]);
+
+useEffect(() => {
+  void loadTaskImagesForTasks(
+    visibleTaskImageIds,
+  );
+}, [visibleTaskImageIds]);
 
   const Badge = ({ count }: { count: number }) => {
     if (!count) return null;
