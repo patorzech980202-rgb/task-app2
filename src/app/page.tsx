@@ -180,6 +180,7 @@ const commentImagesByCommentId = useMemo(() => {
 
   const [signedCommentImageUrls, setSignedCommentImageUrls] = useState<Record<number, string>>({});
   const [selectedCommentImages, setSelectedCommentImages] = useState<File[]>([]);
+  const [isSendingComment, setIsSendingComment] = useState(false);
   const [appErrors, setAppErrors] = useState<AppError[]>([]);
   const [errorsLoading, setErrorsLoading] = useState(false);
   const [openCommentsTaskId, setOpenCommentsTaskId] = useState<number | null>(
@@ -531,15 +532,19 @@ const refreshTaskCommentImages = async (commentIds?: number[]) => {
 };
 
 const sendTaskComment = async (taskId: number) => {
-  if (!profile) return;
+  if (!profile || isSendingComment) return;
 
- const message = commentDraft.trim();
+  const message = commentDraft.trim();
 
-if (!message && selectedCommentImages.length === 0) return;
+  if (!message && selectedCommentImages.length === 0) return;
 
   const task = tasks.find((t) => t.id === taskId);
 
   if (!task) return;
+
+  setIsSendingComment(true);
+
+  try {
 
   const { data, error } = await supabase
     .from("task_comments")
@@ -727,6 +732,9 @@ setSelectedCommentImages([]);
     }
   }),
 );
+  } finally {
+    setIsSendingComment(false);
+  }
 };
 
   const toggleSection = (key: SectionKey) => {
@@ -2861,13 +2869,16 @@ const commentImageUrls = commentImages.map(
     />
 
     <button
-      type="button"
-      onClick={() => sendTaskComment(t.id)}
-      disabled={ !commentDraft.trim() && selectedCommentImages.length === 0 }
-      className="self-end rounded-xl bg-stone-900 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      Wyślij
-    </button>
+  type="button"
+  onClick={() => sendTaskComment(t.id)}
+  disabled={
+    isSendingComment ||
+    (!commentDraft.trim() && selectedCommentImages.length === 0)
+  }
+  className="self-end rounded-xl bg-stone-900 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+>
+  {isSendingComment ? "Wysyłanie..." : "Wyślij"}
+</button>
   </div>
 
   <div className="mt-2">
