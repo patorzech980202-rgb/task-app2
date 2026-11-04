@@ -161,6 +161,9 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskImages, setTaskImages] = useState<TaskImage[]>([]);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
+  const [taskCommentCounts, setTaskCommentCounts] = useState<
+  Record<number, number>
+>({});
   const [taskCommentImages, setTaskCommentImages] = useState<TaskCommentImage[]>([]);
 
 const commentImagesByCommentId = useMemo(() => {
@@ -428,6 +431,39 @@ const refreshTaskCommentsForTasks = async (
   setTaskComments((data || []) as TaskComment[]);
 };
 
+const refreshTaskCommentCounts = async (
+  taskIds: number[],
+) => {
+  if (taskIds.length === 0) {
+    setTaskCommentCounts({});
+    return;
+  }
+
+  const { data, error } = await supabase.rpc(
+    "get_task_comment_counts",
+    {
+      p_task_ids: taskIds,
+    },
+  );
+
+  if (error) {
+    console.error(
+      "Błąd pobierania liczników wiadomości:",
+      error,
+    );
+    return;
+  }
+
+  const counts: Record<number, number> = {};
+
+  for (const row of data || []) {
+    counts[Number(row.task_id)] =
+      Number(row.comment_count);
+  }
+
+  setTaskCommentCounts(counts);
+};
+
 const refreshTaskCommentImages = async (commentIds?: number[]) => {
   if (commentIds && commentIds.length === 0) return;
 
@@ -531,7 +567,14 @@ if (!message && selectedCommentImages.length === 0) return;
   return;
 }
 
-const commentImagesToUpload = [...selectedCommentImages];
+const commentImagesToUpload = Array.from(
+  new Map(
+    selectedCommentImages.map((file) => [
+      `${file.name}-${file.size}-${file.lastModified}`,
+      file,
+    ]),
+  ).values(),
+);
 
 for (const file of commentImagesToUpload) {
   const fileExt = file.name.split(".").pop() || "jpg";
@@ -599,7 +642,7 @@ for (const file of commentImagesToUpload) {
   }
 }
 
-await refreshTaskCommentImages();
+await refreshTaskCommentImages([data.id]);
 setSelectedCommentImages([]);
 
   setTaskComments((prev) => {
@@ -837,7 +880,7 @@ const backgroundLoads = [
   refreshTaskImages(
   (tasksData || []).map((task) => task.id),
 ),
- refreshTaskCommentsForTasks(
+ refreshTaskCommentCounts(
   (tasksData || []).map((task) => task.id),
 ),
 ];
@@ -926,21 +969,48 @@ const bulkRoomAreaSummary = matchedBulkRooms.reduce<Record<number, number>>(
   {},
 );
 
+const taskBatchStatsById = useMemo(() => {
+  const map = new Map<
+    number,
+    {
+      total: number;
+      completed: number;
+      remaining: number;
+    }
+  >();
+
+  for (const task of tasks) {
+    if (task.batch_id === null) continue;
+
+    const stats = map.get(task.batch_id) || {
+      total: 0,
+      completed: 0,
+      remaining: 0,
+    };
+
+    stats.total += 1;
+
+    if (task.done) {
+      stats.completed += 1;
+    }
+
+    stats.remaining =
+      stats.total - stats.completed;
+
+    map.set(task.batch_id, stats);
+  }
+
+  return map;
+}, [tasks]);
+
 const getTaskBatchStats = (batchId: number) => {
-  const batchTasks = tasks.filter(
-    (task) => task.batch_id === batchId,
+  return (
+    taskBatchStatsById.get(batchId) || {
+      total: 0,
+      completed: 0,
+      remaining: 0,
+    }
   );
-
-  const total = batchTasks.length;
-  const completed = batchTasks.filter(
-    (task) => task.done,
-  ).length;
-
-  return {
-    total,
-    completed,
-    remaining: total - completed,
-  };
 };
 
   useEffect(() => {
@@ -1183,6 +1253,11 @@ useEffect(() => {
         if (!loadedTaskIdsRef.current.has(newComment.task_id)) {
   return;
 }
+setTaskCommentCounts((prev) => ({
+  ...prev,
+  [newComment.task_id]:
+    (prev[newComment.task_id] || 0) + 1,
+}));
 
         setTaskComments((prev) => {
           if (prev.some((comment) => comment.id === newComment.id)) {
@@ -2383,46 +2458,67 @@ return t.authorId === profile.id && notArchived;
     ? sent.filter((task) => task.batch_id === null)
     : sent;
 
-const allSentTaskBatches =
-  profile?.department_id === 3
-    ? taskBatches.filter((batch) => {
-        const authorProfile = profiles.find(
-          (p) => p.id === batch.author_id,
-        );
+const allSentTaskBatches = useMemo(() => {
+  if (profile?.department_id !== 3) {
+    return [];
+  }
 
-        if (profile.role === "kierownik") {
-          return (
-            authorProfile?.department_id === 3 &&
-            (filterHotel === 0 || batch.hotel_id === filterHotel)
-          );
-        }
+  return taskBatches.filter((batch) => {
+    const authorProfile =
+      profilesById.get(batch.author_id);
 
-                return (
-          authorProfile?.department_id === 3 &&
-          batch.hotel_id === profile.hotel_id
-        );
-      })
-    : [];
+    if (profile.role === "kierownik") {
+      return (
+        authorProfile?.department_id === 3 &&
+        (filterHotel === 0 ||
+          batch.hotel_id === filterHotel)
+      );
+    }
 
-const sentTaskBatches = allSentTaskBatches.filter((batch) => {
-  const stats = getTaskBatchStats(batch.id);
+    return (
+      authorProfile?.department_id === 3 &&
+      batch.hotel_id === profile.hotel_id
+    );
+  });
+}, [
+  taskBatches,
+  profile,
+  profilesById,
+  filterHotel,
+]);
 
-  const isCompleted =
-    stats.total > 0 &&
-    stats.remaining === 0;
+const sentTaskBatches = useMemo(() => {
+  return allSentTaskBatches.filter((batch) => {
+    const stats = taskBatchStatsById.get(batch.id) || {
+      total: 0,
+      completed: 0,
+      remaining: 0,
+    };
 
-  return batch.archived_at === null && !isCompleted;
-});
+    const isCompleted =
+      stats.total > 0 &&
+      stats.remaining === 0;
 
-const archivedTaskBatches = allSentTaskBatches.filter((batch) => {
-  const stats = getTaskBatchStats(batch.id);
+    return batch.archived_at === null && !isCompleted;
+  });
+}, [allSentTaskBatches, taskBatchStatsById]);
 
-  const isCompleted =
-    stats.total > 0 &&
-    stats.remaining === 0;
+const archivedTaskBatches = useMemo(() => {
+  return allSentTaskBatches.filter((batch) => {
+    const stats = taskBatchStatsById.get(batch.id) || {
+      total: 0,
+      completed: 0,
+      remaining: 0,
+    };
 
-  return batch.archived_at !== null || isCompleted;
-});
+    const isCompleted =
+      stats.total > 0 &&
+      stats.remaining === 0;
+
+    return batch.archived_at !== null || isCompleted;
+  });
+}, [allSentTaskBatches, taskBatchStatsById]);
+
   const archivedReceived = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
@@ -2660,7 +2756,7 @@ onClick={async () => {
   <span>💬 Wiadomości</span>
 
   <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs">
-    {comments.length}
+    {taskCommentCounts[t.id] ?? comments.length}
   </span>
 </button>
 
@@ -2734,30 +2830,6 @@ const commentImageUrls = commentImages.map(
     ))}
   </div>
 )}
-
-{commentImageUrls.length > 0 && (
-  <div className="mt-2 grid grid-cols-3 gap-2">
-    {commentImageUrls.map((url, index) => (
-      <button
-        key={url}
-        type="button"
-        onClick={() => {
-          setPreviewImages(commentImageUrls);
-          setPreviewIndex(index);
-          setPreviewImage(url);
-        }}
-        className="overflow-hidden rounded-xl"
-      >
-        <img
-          src={url}
-          alt={`Zdjęcie ${index + 1}`}
-          className="h-20 w-full object-cover"
-        />
-      </button>
-    ))}
-  </div>
-)}
-
                 <p
                   className={`mt-1 text-[10px] ${
                     isOwnComment ? "text-stone-400" : "text-stone-400"
@@ -2806,18 +2878,29 @@ const commentImageUrls = commentImages.map(
         accept="image/*"
         multiple
         className="hidden"
-        onChange={(e) => {
-          const files = Array.from(e.target.files || []);
+       onChange={(e) => {
+  const files = Array.from(e.target.files || []);
 
-          const combined = [
-            ...selectedCommentImages,
-            ...files,
-          ].slice(0, 3);
+  const allFiles = [
+    ...selectedCommentImages,
+    ...files,
+  ];
 
-          setSelectedCommentImages(combined);
+  const uniqueFiles = allFiles.filter(
+    (file, index, array) =>
+      index ===
+      array.findIndex(
+        (candidate) =>
+          candidate.name === file.name &&
+          candidate.size === file.size &&
+          candidate.lastModified === file.lastModified,
+      ),
+  );
 
-          e.target.value = "";
-        }}
+  setSelectedCommentImages(uniqueFiles.slice(0, 3));
+
+  e.target.value = "";
+}}
       />
     </label>
 
