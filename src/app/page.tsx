@@ -254,6 +254,7 @@ const taskInsertFlushTimerRef =
   const loadedCommentIdsRef = useRef<Set<number>>(new Set());
 
   const [loading, setLoading] = useState(true);
+  const [archiveSearch, setArchiveSearch] = useState("");
 
   const [visibleTaskLimits, setVisibleTaskLimits] = useState<
   Record<string, number>
@@ -2636,6 +2637,115 @@ const archivedSentRegularTasks =
     ? archivedSent.filter((task) => task.batch_id === null)
     : archivedSent;
 
+    const {
+  filteredArchivedReceived,
+  filteredArchivedSentRegularTasks,
+  filteredArchivedTaskBatches,
+} = useMemo(() => {
+  const query = archiveSearch
+    .trim()
+    .toLocaleLowerCase("pl-PL");
+
+  if (!query) {
+    return {
+      filteredArchivedReceived: archivedReceived,
+      filteredArchivedSentRegularTasks:
+        archivedSentRegularTasks,
+      filteredArchivedTaskBatches:
+        archivedTaskBatches,
+    };
+  }
+
+  const matchesTask = (task: Task) => {
+    const author = profilesById.get(task.authorId);
+
+    const completedBy = task.completedBy
+      ? profilesById.get(task.completedBy)
+      : undefined;
+
+    const room =
+      task.room_id !== null
+        ? roomsById.get(task.room_id)
+        : undefined;
+
+    const areaIds = Array.from(
+      new Set([
+        ...(task.area_ids || []),
+        ...(task.area_id !== null
+          ? [task.area_id]
+          : []),
+      ]),
+    );
+
+    const areaNames = areaIds
+      .map((areaId) => areasById.get(areaId)?.name || "")
+      .join(" ");
+
+    const searchableText = [
+      task.title,
+      room?.room_number || "",
+      areaNames,
+      task.hotel_id !== null
+        ? `olimp ${task.hotel_id}`
+        : "",
+      author?.name || "",
+      author?.surname || "",
+      completedBy?.name || "",
+      completedBy?.surname || "",
+    ]
+      .join(" ")
+      .toLocaleLowerCase("pl-PL");
+
+    return searchableText.includes(query);
+  };
+
+  const matchesBatch = (batch: TaskBatch) => {
+    const author =
+      profilesById.get(batch.author_id);
+
+    const batchText = [
+      batch.title,
+      `olimp ${batch.hotel_id}`,
+      author?.name || "",
+      author?.surname || "",
+    ]
+      .join(" ")
+      .toLocaleLowerCase("pl-PL");
+
+    if (batchText.includes(query)) {
+      return true;
+    }
+
+    return tasks.some(
+      (task) =>
+        task.batch_id === batch.id &&
+        matchesTask(task),
+    );
+  };
+
+  return {
+    filteredArchivedReceived:
+      archivedReceived.filter(matchesTask),
+
+    filteredArchivedSentRegularTasks:
+      archivedSentRegularTasks.filter(
+        matchesTask,
+      ),
+
+    filteredArchivedTaskBatches:
+      archivedTaskBatches.filter(matchesBatch),
+  };
+}, [
+  archiveSearch,
+  archivedReceived,
+  archivedSentRegularTasks,
+  archivedTaskBatches,
+  tasks,
+  profilesById,
+  areasById,
+  roomsById,
+]);
+
   const historyTasks = isAdmin
   ? tasks.filter((t) => t.history_archived_at !== null)
   : [];
@@ -4080,19 +4190,45 @@ const commentImageUrls = commentImages.map(
           <span>📦 Archiwum</span>
         </button>
 
-        {openSections.archiwum && (
-          <>
-            <div className="mb-2 mt-3 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
-              Otrzymane
-            </div>
+{openSections.archiwum && (
+  <>
+    <div className="mb-4 mt-3">
+      <div className="relative">
+        <input
+          type="text"
+          value={archiveSearch}
+          onChange={(e) => setArchiveSearch(e.target.value)}
+          placeholder="🔎 Szukaj w archiwum..."
+          className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 pr-10 text-sm text-stone-900 shadow-sm outline-none focus:border-stone-500"
+        />
+        {archiveSearch && (
+          <button
+            type="button"
+            onClick={() => setArchiveSearch("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-lg text-stone-400"
+            aria-label="Wyczyść wyszukiwanie"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+
+    <div className="mb-2 mt-3 text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+      Otrzymane
+    </div>
 
             <>
   {renderTasks(
-    archivedReceived.slice(0, visibleTaskLimits.archived),
-    "archived",
-  )}
+  filteredArchivedReceived.slice(
+    0,
+    visibleTaskLimits.archived,
+  ),
+  "archived",
+)}
 
-  {archivedReceived.length > visibleTaskLimits.archived && (
+  {filteredArchivedReceived.length >
+  visibleTaskLimits.archived && (
     <button
       type="button"
       onClick={() =>
@@ -4113,7 +4249,7 @@ const commentImageUrls = commentImages.map(
             </div>
 
             <>
- {archivedTaskBatches.map((batch) => {
+ {filteredArchivedTaskBatches.map((batch) => {
   const stats = getTaskBatchStats(batch.id);
 
   const batchTasks = tasks
@@ -4230,11 +4366,15 @@ const commentImageUrls = commentImages.map(
 
   <>
   {renderTasks(
-    archivedSentRegularTasks.slice(0, visibleTaskLimits.archivedSent),
-    "archived",
-  )}
+  filteredArchivedSentRegularTasks.slice(
+    0,
+    visibleTaskLimits.archivedSent,
+  ),
+  "archived",
+)}
 
-  {archivedSentRegularTasks.length > visibleTaskLimits.archivedSent && (
+  {filteredArchivedSentRegularTasks.length >
+  visibleTaskLimits.archivedSent && (
     <button
       type="button"
       onClick={() =>
