@@ -730,8 +730,42 @@ setSelectedCommentImages([]);
   }
 };
 
+const logPerformance = async (
+  metricName: string,
+  durationMs: number,
+  success = true,
+  details: Record<string, unknown> = {},
+) => {
+  try {
+    const { error } = await supabase
+      .from("app_performance")
+      .insert({
+        hotel_id: profile?.hotel_id ?? null,
+        department_id: profile?.department_id ?? null,
+        role: profile?.role ?? null,
+        metric_name: metricName,
+        duration_ms: Math.max(0, Math.round(durationMs)),
+        success,
+        details,
+      });
+
+    if (error) {
+      console.error(
+        "Nie udało się zapisać pomiaru wydajności:",
+        error,
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Błąd zapisu pomiaru wydajności:",
+      error,
+    );
+  }
+};
+
   useEffect(() => {
     const load = async () => {
+      const startedAt = performance.now();
       const { data: auth } = await supabase.auth.getUser();
 
       if (!auth.user) {
@@ -780,6 +814,22 @@ const [
 setTasks(tasksData || []);
 setProfiles(allProfiles || []);
 setAreas(allAreas || []);
+
+const durationMs = performance.now() - startedAt;
+
+void logPerformance(
+  "app_start_ms",
+  durationMs,
+  true,
+  {
+    taskCount: (tasksData || []).length,
+    profileCount: (allProfiles || []).length,
+    areaCount: (allAreas || []).length,
+    hotelId: prof?.hotel_id ?? null,
+departmentId: prof?.department_id ?? null,
+role: prof?.role ?? null,
+  },
+);
 
 setLoading(false);
 
@@ -1258,6 +1308,7 @@ useEffect(() => {
 
   const taskText = newTask.trim();
   const attachmentsToUpload = [...selectedAttachments];
+  const startedAt = performance.now();
 
   setIsSending(true);
 
@@ -1487,8 +1538,21 @@ const rows: TaskInsertRow[] = isBulkRoomTask
       .from("tasks")
       .insert(rows)
       .select();
+      const durationMs = performance.now() - startedAt;
 
     if (error) {
+      void logPerformance(
+  "task_create_ms",
+  durationMs,
+  false,
+  {
+    bulk: isBulkRoomTask,
+    taskCount: rows.length,
+    hotelId: targetHotelId,
+    departmentId: targetDepartment,
+    errorCode: error.code,
+  },
+);
   await logAppError(
     "task_create_error",
     error.message,
@@ -1531,6 +1595,7 @@ const uploadPromise = (async () => {
   if (!createdTask || attachmentsToUpload.length === 0) return;
 
   for (const file of attachmentsToUpload) {
+    const uploadStartedAt = performance.now();
     const fileExt = file.name.split(".").pop();
     const fileName =
       `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
@@ -1543,8 +1608,21 @@ const uploadPromise = (async () => {
       .upload(filePath, file, {
         contentType: file.type,
       });
+      const uploadDurationMs =
+  performance.now() - uploadStartedAt;
 
    if (uploadError) {
+  void logPerformance(
+    "attachment_upload_ms",
+    uploadDurationMs,
+    false,
+    {
+      taskId: createdTask.id,
+      fileSizeBytes: file.size,
+      fileType: file.type,
+    },
+  );
+
   await logAppError(
     "task_attachment_upload_error",
     uploadError.message,
@@ -1558,6 +1636,17 @@ const uploadPromise = (async () => {
   console.error("uploadError:", uploadError);
   continue;
 }
+
+void logPerformance(
+  "attachment_upload_ms",
+  uploadDurationMs,
+  true,
+  {
+    taskId: createdTask.id,
+    fileSizeBytes: file.size,
+    fileType: file.type,
+  },
+);
 
 const { data: publicUrlData } = supabase.storage
   .from("task-images")
@@ -1706,6 +1795,7 @@ results.forEach((result) => {
   const markDone = async (id: number) => {
   if (!profile) return;
 
+  const startedAt = performance.now();
   const completedAt = new Date().toISOString();
 
   const { error } = await supabase
@@ -1717,7 +1807,19 @@ results.forEach((result) => {
     })
     .eq("id", id);
 
+  const durationMs = performance.now() - startedAt;
+
   if (error) {
+    void logPerformance(
+      "task_done_ms",
+      durationMs,
+      false,
+      {
+        taskId: id,
+        errorCode: error.code,
+      },
+    );
+
     await logAppError(
       "task_complete_error",
       error.message,
@@ -1732,6 +1834,15 @@ results.forEach((result) => {
     alert("Nie udało się oznaczyć zadania jako wykonane.");
     return;
   }
+
+  void logPerformance(
+    "task_done_ms",
+    durationMs,
+    true,
+    {
+      taskId: id,
+    },
+  );
 };
 
   const archiveTask = async (id: number) => {
@@ -2520,11 +2631,25 @@ onClick={async () => {
     return;
   }
 
+  const startedAt = performance.now();
+
   const commentsForTask =
     await refreshTaskComments(t.id);
 
   await refreshTaskCommentImages(
     commentsForTask.map((comment) => comment.id),
+  );
+
+  const durationMs = performance.now() - startedAt;
+
+  void logPerformance(
+    "comments_load_ms",
+    durationMs,
+    true,
+    {
+      taskId: t.id,
+      commentsCount: commentsForTask.length,
+    },
   );
 
   setOpenCommentsTaskId(t.id);
