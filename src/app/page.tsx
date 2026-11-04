@@ -2650,6 +2650,268 @@ const archivedSentRegularTasks =
     );
   };
 
+const renderTaskMessages = (t: Task, mode: string) => {
+  const comments =
+    taskCommentsByTaskId.get(t.id) || [];
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={async () => {
+          if (openCommentsTaskId === t.id) {
+            setOpenCommentsTaskId(null);
+            return;
+          }
+
+          const startedAt = performance.now();
+
+          const commentsForTask =
+            await refreshTaskComments(t.id);
+
+          await refreshTaskCommentImages(
+            commentsForTask.map(
+              (comment) => comment.id,
+            ),
+          );
+
+          const durationMs =
+            performance.now() - startedAt;
+
+          void logPerformance(
+            "comments_load_ms",
+            durationMs,
+            true,
+            {
+              taskId: t.id,
+              commentsCount:
+                commentsForTask.length,
+            },
+          );
+
+          setOpenCommentsTaskId(t.id);
+        }}
+        className="mt-3 flex w-full items-center justify-between rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700"
+      >
+        <span>💬 Wiadomości</span>
+
+        <span className="rounded-full bg-stone-200 px-2 py-0.5 text-xs">
+          {taskCommentCounts[t.id] ??
+            comments.length}
+        </span>
+      </button>
+
+      {openCommentsTaskId === t.id && (
+        <div className="mt-2 rounded-2xl border border-stone-200 bg-white p-3">
+          <div className="max-h-64 space-y-2 overflow-y-auto">
+            {comments.length === 0 ? (
+              <p className="py-3 text-center text-xs text-stone-500">
+                Brak wiadomości. Możesz rozpocząć rozmowę.
+              </p>
+            ) : (
+              comments.map((comment) => {
+                const isOwnComment =
+                  comment.author_id === profile?.id;
+
+                const commentImages =
+                  commentImagesByCommentId.get(
+                    comment.id,
+                  ) || [];
+
+                const commentImageUrls =
+                  commentImages.map(
+                    (image) =>
+                      signedCommentImageUrls[
+                        image.id
+                      ] || image.image_url,
+                  );
+
+                return (
+                  <div
+                    key={comment.id}
+                    className={`flex ${
+                      isOwnComment
+                        ? "justify-end"
+                        : "justify-start"
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                        isOwnComment
+                          ? "bg-stone-900 text-white"
+                          : "border border-stone-200 bg-white text-stone-900"
+                      }`}
+                    >
+                      <p
+                        className={`mb-1 text-[11px] font-bold ${
+                          isOwnComment
+                            ? "text-stone-300"
+                            : "text-stone-500"
+                        }`}
+                      >
+                        {getProfileName(
+                          comment.author_id,
+                        )}
+                      </p>
+
+                      {comment.message && (
+                        <p className="whitespace-pre-wrap text-sm">
+                          {comment.message}
+                        </p>
+                      )}
+
+                      {commentImageUrls.length >
+                        0 && (
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {commentImageUrls.map(
+                            (url, index) => (
+                              <button
+                                key={url}
+                                type="button"
+                                onClick={() => {
+                                  setPreviewImages(
+                                    commentImageUrls,
+                                  );
+                                  setPreviewIndex(
+                                    index,
+                                  );
+                                  setPreviewImage(
+                                    url,
+                                  );
+                                }}
+                                className="overflow-hidden rounded-xl"
+                              >
+                                <img
+                                  src={url}
+                                  alt={`Zdjęcie ${index + 1}`}
+                                  className="h-20 w-full object-cover"
+                                />
+                              </button>
+                            ),
+                          )}
+                        </div>
+                      )}
+
+                      <p className="mt-1 text-[10px] text-stone-400">
+                        {new Date(
+                          comment.created_at,
+                        ).toLocaleString(
+                          "pl-PL",
+                          {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          },
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {mode !== "history" && (
+            <div className="mt-3">
+              <div className="flex gap-2">
+                <textarea
+                  value={commentDraft}
+                  onChange={(e) =>
+                    setCommentDraft(
+                      e.target.value,
+                    )
+                  }
+                  placeholder="Napisz wiadomość..."
+                  rows={2}
+                  className="min-h-[44px] flex-1 resize-none rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    sendTaskComment(t.id)
+                  }
+                  disabled={
+                    isSendingComment ||
+                    (!commentDraft.trim() &&
+                      selectedCommentImages.length ===
+                        0)
+                  }
+                  className="self-end rounded-xl bg-stone-900 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isSendingComment
+                    ? "Wysyłanie..."
+                    : "Wyślij"}
+                </button>
+              </div>
+
+              <div className="mt-2">
+                <label className="inline-flex cursor-pointer items-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 shadow-sm">
+                  📷 Dodaj zdjęcia
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(
+                        e.target.files || [],
+                      );
+
+                      const allFiles = [
+                        ...selectedCommentImages,
+                        ...files,
+                      ];
+
+                      const uniqueFiles =
+                        allFiles.filter(
+                          (
+                            file,
+                            index,
+                            array,
+                          ) =>
+                            index ===
+                            array.findIndex(
+                              (candidate) =>
+                                candidate.name ===
+                                  file.name &&
+                                candidate.size ===
+                                  file.size &&
+                                candidate.lastModified ===
+                                  file.lastModified,
+                            ),
+                        );
+
+                      setSelectedCommentImages(
+                        uniqueFiles.slice(0, 3),
+                      );
+
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+
+                {selectedCommentImages.length >
+                  0 && (
+                  <div className="mt-2 text-xs text-stone-600">
+                    Wybrano zdjęcia:{" "}
+                    {
+                      selectedCommentImages.length
+                    }
+                    /3
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+};
+
   const renderTasks = (list: Task[], mode: string) => {
     if (list.length === 0) {
       return (
@@ -3726,33 +3988,37 @@ const commentImageUrls = commentImages.map(
       );
 
       return (
-        <div
-          key={task.id}
-          className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm"
-        >
-          <div>
-            <span className="font-semibold text-stone-900">
-              Pokój {room?.room_number || "—"}
-            </span>
+  <div
+    key={task.id}
+    className="rounded-xl bg-stone-50 px-3 py-2 text-sm"
+  >
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <span className="font-semibold text-stone-900">
+          Pokój {room?.room_number || "—"}
+        </span>
 
-            {area && (
-              <span className="ml-2 text-xs text-stone-500">
-                {area.name}
-              </span>
-            )}
-          </div>
-
-          <span
-            className={
-              task.done
-                ? "font-semibold text-green-700"
-                : "font-semibold text-amber-700"
-            }
-          >
-            {task.done ? "✅ Wykonane" : "⏳ Oczekuje"}
+        {area && (
+          <span className="ml-2 text-xs text-stone-500">
+            {area.name}
           </span>
-        </div>
-      );
+        )}
+      </div>
+
+      <span
+        className={
+          task.done
+            ? "font-semibold text-green-700"
+            : "font-semibold text-amber-700"
+        }
+      >
+        {task.done ? "✅ Wykonane" : "⏳ Oczekuje"}
+      </span>
+    </div>
+
+    {renderTaskMessages(task, "sent")}
+  </div>
+);
     })}
   </div>
 )}
@@ -3922,28 +4188,32 @@ const commentImageUrls = commentImages.map(
         (item) => item.id === task.area_id,
       );
 
-      return (
-        <div
-          key={task.id}
-          className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm"
-        >
-          <div>
-            <span className="font-semibold text-stone-900">
-              Pokój {room?.room_number || "—"}
-            </span>
+     return (
+  <div
+    key={task.id}
+    className="rounded-xl bg-stone-50 px-3 py-2 text-sm"
+  >
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <span className="font-semibold text-stone-900">
+          Pokój {room?.room_number || "—"}
+        </span>
 
-            {area && (
-              <span className="ml-2 text-xs text-stone-500">
-                {area.name}
-              </span>
-            )}
-          </div>
-
-          <span className="font-semibold text-green-700">
-            ✅ Wykonane
+        {area && (
+          <span className="ml-2 text-xs text-stone-500">
+            {area.name}
           </span>
-        </div>
-      );
+        )}
+      </div>
+
+      <span className="font-semibold text-green-700">
+        ✅ Wykonane
+      </span>
+    </div>
+
+    {renderTaskMessages(task, "archived")}
+  </div>
+);
     })}
   </div>
 )}
