@@ -3028,6 +3028,15 @@ return t.authorId === profile.id && notArchived;
     ? sent.filter((task) => task.batch_id === null)
     : sent;
 
+    const sentRegularTasksForDisplay = isAdmin
+  ? [...sentRegularTasks].sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+
+      return dateB - dateA;
+    })
+  : sentRegularTasks;
+
 const allSentTaskBatches = useMemo(() => {
   if (profile?.department_id !== 3) {
     return [];
@@ -3072,6 +3081,15 @@ const sentTaskBatches = useMemo(() => {
     return batch.archived_at === null && !isCompleted;
   });
 }, [allSentTaskBatches, taskBatchStatsById]);
+
+const sentTaskBatchesForDisplay = isAdmin
+  ? [...sentTaskBatches].sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+
+      return dateB - dateA;
+    })
+  : sentTaskBatches;
 
 const archivedTaskBatches = useMemo(() => {
   return allSentTaskBatches.filter((batch) => {
@@ -4629,7 +4647,7 @@ const commentImageUrls = commentImages.map(
 
         {openSections.wysłane && (
   <>
-    {sentTaskBatches.map((batch) => {
+    {sentTaskBatchesForDisplay.map((batch) => {
   const stats = getTaskBatchStats(batch.id);
 
   const batchTasks = tasks
@@ -4798,7 +4816,7 @@ const commentImageUrls = commentImages.map(
 
     <>
   {renderTasks(
-    sentRegularTasks.slice(0, visibleTaskLimits.sent),
+    sentRegularTasksForDisplay.slice(0, visibleTaskLimits.sent),
     "sent",
   )}
 
