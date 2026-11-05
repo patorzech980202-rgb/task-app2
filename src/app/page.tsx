@@ -977,6 +977,118 @@ void Promise.all(backgroundLoads).catch((error) => {
     load();
   }, []);
 
+useEffect(() => {
+  if (!profile) return;
+
+  let refreshInFlight = false;
+
+  const refreshTasksFromServer = async () => {
+    if (refreshInFlight) return;
+
+    refreshInFlight = true;
+
+    try {
+      let tasksQuery = supabase
+        .from("tasks")
+        .select("*");
+
+      const isCurrentUserAdmin =
+        profile.role === "admin" ||
+        profile.role === "administrator";
+
+      if (!isCurrentUserAdmin) {
+        tasksQuery = tasksQuery.is(
+          "history_archived_at",
+          null,
+        );
+      }
+
+      const isHotelScopedUser =
+        profile.role === "pracownik" ||
+        profile.role === "kierownik_hotelu";
+
+      if (
+        isHotelScopedUser &&
+        profile.hotel_id
+      ) {
+        tasksQuery = tasksQuery.eq(
+          "hotel_id",
+          profile.hotel_id,
+        );
+      }
+
+      const { data, error } =
+        await tasksQuery;
+
+      if (error) {
+        await logAppError(
+          "tasks_resume_refresh_error",
+          error.message,
+          {
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+          },
+        );
+
+        return;
+      }
+
+      setTasks((data || []) as Task[]);
+    } finally {
+      refreshInFlight = false;
+    }
+  };
+
+  const handleVisibilityChange = () => {
+    if (
+      document.visibilityState === "visible"
+    ) {
+      void refreshTasksFromServer();
+    }
+  };
+
+  const handleFocus = () => {
+    void refreshTasksFromServer();
+  };
+
+  const handleOnline = () => {
+    void refreshTasksFromServer();
+  };
+
+  document.addEventListener(
+    "visibilitychange",
+    handleVisibilityChange,
+  );
+
+  window.addEventListener(
+    "focus",
+    handleFocus,
+  );
+
+  window.addEventListener(
+    "online",
+    handleOnline,
+  );
+
+  return () => {
+    document.removeEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
+
+    window.removeEventListener(
+      "focus",
+      handleFocus,
+    );
+
+    window.removeEventListener(
+      "online",
+      handleOnline,
+    );
+  };
+}, [profile]);
+
   const parseRoomNumbers = (input: string) => {
   return Array.from(
     new Set(
@@ -1231,7 +1343,23 @@ const taskRealtimeConfig = isHotelScopedRealtimeUser
   }
 },
       )
-      .subscribe();
+      .subscribe((status) => {
+  if (status === "SUBSCRIBED") {
+    console.log("Task Realtime: połączono");
+    return;
+  }
+
+  if (
+    status === "CHANNEL_ERROR" ||
+    status === "TIMED_OUT" ||
+    status === "CLOSED"
+  ) {
+    console.warn(
+      "Task Realtime: problem z połączeniem:",
+      status,
+    );
+  }
+});
 
     return () => {
       supabase.removeChannel(channel);
