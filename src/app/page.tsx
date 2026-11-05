@@ -2074,6 +2074,308 @@ results.forEach((result) => {
   );
 };
 
+const editTaskBatchRooms = async (batchId: number) => {
+  if (!profile) return;
+
+  const batch = taskBatches.find(
+    (item) => item.id === batchId,
+  );
+
+  if (!batch) return;
+
+  if (batch.author_id !== profile.id) {
+    alert("Możesz edytować tylko paczkę wysłaną przez siebie.");
+    return;
+  }
+
+  if (batch.archived_at) {
+    alert("Nie można edytować zarchiwizowanej paczki.");
+    return;
+  }
+
+  const batchTasks = tasks.filter(
+    (task) => task.batch_id === batchId,
+  );
+
+  if (batchTasks.length === 0) {
+    alert("Nie znaleziono zadań należących do tej paczki.");
+    return;
+  }
+
+  // Obecne numery pokoi w paczce.
+  const currentRoomNumbers = batchTasks
+    .map((task) => {
+      if (task.room_id === null) return null;
+
+      const room = roomsById.get(task.room_id);
+
+      return room?.room_number || null;
+    })
+    .filter((roomNumber): roomNumber is string => Boolean(roomNumber))
+    .sort((a, b) =>
+      a.localeCompare(b, "pl", {
+        numeric: true,
+      }),
+    );
+
+  const editedRooms = window.prompt(
+    "Edytuj numery pokoi w paczce:",
+    currentRoomNumbers.join(", "),
+  );
+
+  if (editedRooms === null) return;
+
+  const desiredRoomNumbers =
+    parseRoomNumbers(editedRooms);
+
+  if (desiredRoomNumbers.length === 0) {
+    alert("Paczka musi zawierać co najmniej jeden pokój.");
+    return;
+  }
+
+  // Bierzemy tylko aktywne pokoje z hotelu tej paczki.
+  const hotelRooms = rooms.filter(
+    (room) =>
+      room.hotel_id === batch.hotel_id &&
+      room.active,
+  );
+
+  const hotelRoomsByNumber = new Map(
+    hotelRooms.map((room) => [
+      room.room_number.trim().toUpperCase(),
+      room,
+    ]),
+  );
+
+  // Sprawdzenie, czy wpisane pokoje istnieją.
+  const unknownRoomNumbers =
+    desiredRoomNumbers.filter(
+      (roomNumber) =>
+        !hotelRoomsByNumber.has(roomNumber),
+    );
+
+  if (unknownRoomNumbers.length > 0) {
+    alert(
+      `Nie znaleziono pokoi: ${unknownRoomNumbers.join(", ")}`,
+    );
+    return;
+  }
+
+  const desiredRooms = desiredRoomNumbers
+    .map((roomNumber) =>
+      hotelRoomsByNumber.get(roomNumber),
+    )
+    .filter((room): room is Room => Boolean(room));
+
+  const desiredRoomIds = new Set(
+    desiredRooms.map((room) => room.id),
+  );
+
+  // Nie pozwalamy usunąć pokoju, który został już wykonany.
+  const completedRoomsToRemove = batchTasks.filter(
+    (task) =>
+      task.done &&
+      task.room_id !== null &&
+      !desiredRoomIds.has(task.room_id),
+  );
+
+  if (completedRoomsToRemove.length > 0) {
+    const completedRoomNumbers =
+      completedRoomsToRemove
+        .map((task) => {
+          if (task.room_id === null) return null;
+
+          return (
+            roomsById.get(task.room_id)
+              ?.room_number || null
+          );
+        })
+        .filter(
+          (roomNumber): roomNumber is string =>
+            Boolean(roomNumber),
+        );
+
+    alert(
+      `Nie można usunąć wykonanych pokoi: ${completedRoomNumbers.join(", ")}`,
+    );
+    return;
+  }
+
+  const currentTaskRoomIds = new Set(
+    batchTasks
+      .map((task) => task.room_id)
+      .filter((roomId): roomId is number =>
+        roomId !== null,
+      ),
+  );
+
+  // Pokoje dopisane przez użytkownika.
+  const roomsToAdd = desiredRooms.filter(
+    (room) => !currentTaskRoomIds.has(room.id),
+  );
+
+  // Niewykonane pokoje usunięte z listy.
+  const tasksToRemove = batchTasks.filter(
+    (task) =>
+      !task.done &&
+      task.room_id !== null &&
+      !desiredRoomIds.has(task.room_id),
+  );
+
+  if (
+    roomsToAdd.length === 0 &&
+    tasksToRemove.length === 0
+  ) {
+    alert("Lista pokoi nie została zmieniona.");
+    return;
+  }
+
+  let createdTasks: Task[] = [];
+
+  // Najpierw dodajemy nowe pokoje.
+  if (roomsToAdd.length > 0) {
+    const newTaskRows = roomsToAdd.map(
+      (room) => ({
+        title: `Pokój ${room.room_number}: ${batch.title}`,
+        authorId: batch.author_id,
+        assigneeId: null,
+        departmentId: batch.department_id,
+        hotel_id: batch.hotel_id,
+
+        area_id: room.area_id,
+        area_ids: [room.area_id],
+
+        room_id: room.id,
+        batch_id: batch.id,
+
+        done: false,
+        completedBy: null,
+        archivedBy: [],
+        createdAt: new Date().toISOString(),
+        completedAt: null,
+      }),
+    );
+
+    const {
+      data: addedTasks,
+      error: addError,
+    } = await supabase
+      .from("tasks")
+      .insert(newTaskRows)
+      .select();
+
+    if (addError) {
+      await logAppError(
+        "task_batch_room_add_error",
+        addError.message,
+        {
+          batchId,
+          code: addError.code,
+          details: addError.details,
+          hint: addError.hint,
+        },
+      );
+
+      alert(
+        "Nie udało się dodać nowych pokoi do paczki.",
+      );
+      return;
+    }
+
+    createdTasks = (addedTasks || []) as Task[];
+  }
+
+  // Następnie odłączamy błędnie wpisane,
+  // ale jeszcze niewykonane pokoje.
+  if (tasksToRemove.length > 0) {
+    const removedTaskIds = tasksToRemove.map(
+      (task) => task.id,
+    );
+
+    const cancelledAt =
+      new Date().toISOString();
+
+    const { error: removeError } =
+      await supabase
+        .from("tasks")
+        .update({
+          cancelled_at: cancelledAt,
+          cancelled_by: profile.id,
+          batch_id: null,
+        })
+        .in("id", removedTaskIds)
+        .eq("done", false);
+
+    if (removeError) {
+      await logAppError(
+        "task_batch_room_remove_error",
+        removeError.message,
+        {
+          batchId,
+          taskIds: removedTaskIds,
+          code: removeError.code,
+          details: removeError.details,
+          hint: removeError.hint,
+        },
+      );
+
+      // Jeżeli wcześniej dodaliśmy nowe pokoje,
+      // wycofujemy je również, aby nie zostawić
+      // częściowo zmienionej paczki.
+      if (createdTasks.length > 0) {
+        await supabase
+          .from("tasks")
+          .update({
+            cancelled_at: new Date().toISOString(),
+            cancelled_by: profile.id,
+            batch_id: null,
+          })
+          .in(
+            "id",
+            createdTasks.map((task) => task.id),
+          );
+      }
+
+      alert(
+        "Nie udało się usunąć błędnych pokoi z paczki.",
+      );
+      return;
+    }
+
+    setTasks((prev) =>
+      prev.map((task) =>
+        removedTaskIds.includes(task.id)
+          ? {
+              ...task,
+              cancelled_at: cancelledAt,
+              cancelled_by: profile.id,
+              batch_id: null,
+            }
+          : task,
+      ),
+    );
+  }
+
+  // Dodajemy nowo utworzone taski do lokalnego stanu.
+  if (createdTasks.length > 0) {
+    setTasks((prev) => {
+      const existingIds = new Set(
+        prev.map((task) => task.id),
+      );
+
+      const newTasks = createdTasks.filter(
+        (task) => !existingIds.has(task.id),
+      );
+
+      return [...prev, ...newTasks];
+    });
+  }
+
+  alert(
+    `Zaktualizowano paczkę.\nDodano: ${roomsToAdd.length}\nUsunięto: ${tasksToRemove.length}`,
+  );
+};
+
 const archiveTaskBatch = async (batchId: number) => {
   if (!profile) return;
 
@@ -2115,6 +2417,81 @@ const archiveTaskBatch = async (batchId: number) => {
   }
 
   await refreshTaskBatches();
+};
+
+const editTask = async (id: number) => {
+  if (!profile) return;
+
+  const task = tasks.find((t) => t.id === id);
+
+  if (!task) return;
+
+  if (task.authorId !== profile.id) {
+    alert("Możesz edytować tylko zadanie wysłane przez siebie.");
+    return;
+  }
+
+  if (task.done) {
+    alert("Nie można edytować zadania, które zostało już wykonane.");
+    return;
+  }
+
+  if (task.cancelled_at) {
+    alert("Nie można edytować wycofanego zadania.");
+    return;
+  }
+
+  const editedTitle = window.prompt(
+    "Edytuj treść zadania:",
+    task.title,
+  );
+
+  if (editedTitle === null) return;
+
+  const newTitle = editedTitle.trim();
+
+  if (!newTitle) {
+    alert("Treść zadania nie może być pusta.");
+    return;
+  }
+
+  if (newTitle === task.title) return;
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      title: newTitle,
+    })
+    .eq("id", id)
+    .eq("authorId", profile.id)
+    .eq("done", false);
+
+  if (error) {
+    await logAppError(
+      "task_edit_error",
+      error.message,
+      {
+        taskId: id,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      },
+    );
+
+    alert("Nie udało się edytować zadania.");
+    return;
+  }
+
+  setTasks((prev) =>
+    prev.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            title: newTitle,
+          }
+        : item,
+    ),
+  );
 };
 
   const cancelTask = async (id: number) => {
@@ -3452,11 +3829,20 @@ const commentImageUrls = commentImages.map(
               </div>
             )}
 
-            {mode === "sent" &&
+           {mode === "sent" &&
   !t.done &&
   t.authorId === profile?.id && (
-    <div className="shrink-0">
+    <div className="flex shrink-0 flex-col gap-2">
       <button
+        type="button"
+        onClick={() => editTask(t.id)}
+        className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 shadow-sm"
+      >
+        Edytuj
+      </button>
+
+      <button
+        type="button"
         onClick={() => cancelTask(t.id)}
         className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 shadow-sm"
       >
@@ -4183,6 +4569,16 @@ const commentImageUrls = commentImages.map(
               </span>
             </div>
           </div>
+
+{batch.author_id === profile?.id && (
+  <button
+    type="button"
+    onClick={() => editTaskBatchRooms(batch.id)}
+    className="mt-3 w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 shadow-sm"
+  >
+    Edytuj pokoje
+  </button>
+)}
 
 <button
   type="button"
