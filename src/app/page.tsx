@@ -2978,8 +2978,11 @@ const areaMatches =
     const authorProfile = profilesById.get(t.authorId);
 
     if (isAdmin) {
-      return notArchived;
-    }
+  const archivedByAnyone =
+    (t.archivedBy?.length ?? 0) > 0;
+
+  return !archivedByAnyone;
+}
 
     if (isManager) {
   return (
@@ -3111,9 +3114,12 @@ const archivedTaskBatches = useMemo(() => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
 
-    if (isAdmin) {
-      return t.done;
-    }
+   if (isAdmin) {
+  return (
+    t.done &&
+    (t.archivedBy?.length ?? 0) > 0
+  );
+}
 
     if (isManager) {
       return (
@@ -3164,8 +3170,11 @@ const archivedTaskBatches = useMemo(() => {
     const authorProfile = profilesById.get(t.authorId);
 
     if (isAdmin) {
-      return t.done;
-    }
+  return (
+    t.done &&
+    (t.archivedBy?.length ?? 0) > 0
+  );
+}
 
     if (isManager) {
       return (
