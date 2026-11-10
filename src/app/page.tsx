@@ -1679,6 +1679,30 @@ const housekeepingTargetAreaIds = isBulkRoomTask
 );
 });
 
+// Managerowie dostają push o każdym nowym zadaniu,
+// które pojawia się w ich dziale jako otrzymane
+// albo zostało wysłane przez ich dział.
+const managerPushTargets = profiles.filter(
+  (p: Profile) =>
+    p.role === "kierownik" &&
+    (
+      p.department_id === targetDepartment ||
+      p.department_id === profile.department_id
+    ) &&
+    p.id !== profile.id,
+);
+
+// Łączymy zwykłych odbiorców z managerami
+// i usuwamy ewentualne duplikaty.
+const pushTargets = Array.from(
+  new Map(
+    [
+      ...targets,
+      ...managerPushTargets,
+    ].map((p: Profile) => [p.id, p]),
+  ).values(),
+);
+
 if (
   (isHousekeepingManagerTarget || isHotelManagerTarget) &&
   targets.length === 0
@@ -1953,7 +1977,7 @@ if (imageInsertError) {
 
 // Pushe lecą równolegle do wszystkich odbiorców.
 const pushPromise = Promise.all(
-  targets.map(async (target) => {
+ pushTargets.map(async (target) => {
     try {
       const targetAreaIds =
         target.current_area_ids?.length
@@ -1962,19 +1986,29 @@ const pushPromise = Promise.all(
             ? [target.current_area_id]
             : [];
 
-      const targetRoomTasks = isBulkRoomTask
-        ? rows.filter(
-            (row) =>
-              row.area_id !== null &&
-              targetAreaIds.includes(row.area_id),
-          )
-        : [];
+      const isDepartmentManager =
+  target.role === "kierownik";
 
-      // Przy paczce nie wysyłamy pushu osobie,
-      // która nie obsługuje żadnego z tych pięter.
-      if (isBulkRoomTask && targetRoomTasks.length === 0) {
-        return null;
-      }
+const targetRoomTasks = isBulkRoomTask
+  ? isDepartmentManager
+    ? rows
+    : rows.filter(
+        (row) =>
+          row.area_id !== null &&
+          targetAreaIds.includes(row.area_id),
+      )
+  : [];
+
+// Zwykły pracownik dostaje push tylko o paczce
+// zawierającej pokoje z jego piętra.
+// Manager dostaje informację o całej paczce.
+if (
+  isBulkRoomTask &&
+  !isDepartmentManager &&
+  targetRoomTasks.length === 0
+) {
+  return null;
+}
 
       const pushTitle = isBulkRoomTask
         ? "Nowe zadania pokojowe"
