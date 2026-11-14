@@ -1880,100 +1880,135 @@ setShowForm(false);
 setIsSending(false);
 
 // Zdjęcia/filmy wysyłamy dalej bez blokowania formularza.
+// Zdjęcia/filmy wysyłamy dalej bez blokowania formularza.
+// Maksymalnie 3 pliki są wysyłane równolegle.
 const uploadPromise = (async () => {
   if (!createdTask || attachmentsToUpload.length === 0) return;
 
-  for (const file of attachmentsToUpload) {
-    const uploadStartedAt = performance.now();
-    const fileExt = file.name.split(".").pop();
-    const fileName =
-      `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
+  for (
+    let index = 0;
+    index < attachmentsToUpload.length;
+    index += 3
+  ) {
+    const attachmentBatch = attachmentsToUpload.slice(
+      index,
+      index + 3,
+    );
 
-    const filePath =
-      `tasks/${createdTask.id}/${fileName}`;
+    await Promise.all(
+      attachmentBatch.map(async (file) => {
+        const uploadStartedAt = performance.now();
 
-    const { error: uploadError } = await supabase.storage
-      .from("task-images")
-      .upload(filePath, file, {
-        contentType: file.type,
-      });
-      const uploadDurationMs =
-  performance.now() - uploadStartedAt;
+        const fileExt =
+          file.name.split(".").pop() || "bin";
 
-   if (uploadError) {
-  void logPerformance(
-    "attachment_upload_ms",
-    uploadDurationMs,
-    false,
-    {
-      taskId: createdTask.id,
-      fileSizeBytes: file.size,
-      fileType: file.type,
-    },
-  );
+        const fileName =
+          `${createdTask.id}-${Date.now()}-${Math.random()}.${fileExt}`;
 
-  await logAppError(
-    "task_attachment_upload_error",
-    uploadError.message,
-    {
-      taskId: createdTask.id,
-      fileName: file.name,
-      fileType: file.type,
-    },
-  );
+        const filePath =
+          `tasks/${createdTask.id}/${fileName}`;
 
-  console.error("uploadError:", uploadError);
-  continue;
-}
+        const { error: uploadError } =
+          await supabase.storage
+            .from("task-images")
+            .upload(filePath, file, {
+              contentType: file.type,
+            });
 
-void logPerformance(
-  "attachment_upload_ms",
-  uploadDurationMs,
-  true,
-  {
-    taskId: createdTask.id,
-    fileSizeBytes: file.size,
-    fileType: file.type,
-  },
-);
+        const uploadDurationMs =
+          performance.now() - uploadStartedAt;
 
-const { data: publicUrlData } = supabase.storage
-  .from("task-images")
-  .getPublicUrl(filePath);
+        if (uploadError) {
+          void logPerformance(
+            "attachment_upload_ms",
+            uploadDurationMs,
+            false,
+            {
+              taskId: createdTask.id,
+              fileSizeBytes: file.size,
+              fileType: file.type,
+            },
+          );
 
-    const { error: imageInsertError } = await supabase
-  .from("task_images")
-  .insert({
-    task_id: createdTask.id,
-    image_url: publicUrlData.publicUrl,
-    file_path: filePath,
-    file_type: file.type,
-  });
+          await logAppError(
+            "task_attachment_upload_error",
+            uploadError.message,
+            {
+              taskId: createdTask.id,
+              fileName: file.name,
+              fileType: file.type,
+            },
+          );
 
-if (imageInsertError) {
-  await logAppError(
-    "task_attachment_record_error",
-    imageInsertError.message,
-    {
-      taskId: createdTask.id,
-      fileName: file.name,
-      fileType: file.type,
-      filePath,
-      code: imageInsertError.code,
-      details: imageInsertError.details,
-      hint: imageInsertError.hint,
-    },
-  );
+          console.error(
+            "uploadError:",
+            uploadError,
+          );
 
-  console.error("task_images insert error:", imageInsertError);
-}
+          return;
+        }
+
+        void logPerformance(
+          "attachment_upload_ms",
+          uploadDurationMs,
+          true,
+          {
+            taskId: createdTask.id,
+            fileSizeBytes: file.size,
+            fileType: file.type,
+          },
+        );
+
+        const { data: publicUrlData } =
+          supabase.storage
+            .from("task-images")
+            .getPublicUrl(filePath);
+
+        const { error: imageInsertError } =
+          await supabase
+            .from("task_images")
+            .insert({
+              task_id: createdTask.id,
+              image_url:
+                publicUrlData.publicUrl,
+              file_path: filePath,
+              file_type: file.type,
+            });
+
+        if (imageInsertError) {
+          await logAppError(
+            "task_attachment_record_error",
+            imageInsertError.message,
+            {
+              taskId: createdTask.id,
+              fileName: file.name,
+              fileType: file.type,
+              filePath,
+              code: imageInsertError.code,
+              details:
+                imageInsertError.details,
+              hint: imageInsertError.hint,
+            },
+          );
+
+          console.error(
+            "task_images insert error:",
+            imageInsertError,
+          );
+        }
+      }),
+    );
   }
 
   await loadTaskImagesForTasks(
-  [createdTask.id],
-  true,
-);
+    [createdTask.id],
+    true,
+  );
 })();
+
+// Czekamy, aż wszystkie załączniki zakończą wysyłanie.
+// Dopiero potem wysyłamy powiadomienia push.
+await uploadPromise;
 
 // Pushe lecą równolegle do wszystkich odbiorców.
 const pushPromise = Promise.all(
@@ -2070,7 +2105,6 @@ if (
 
 // Upload i push wykonują się równolegle.
 const results = await Promise.allSettled([
-  uploadPromise,
   pushPromise,
 ]);
 
