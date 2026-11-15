@@ -11,6 +11,7 @@ type TaskImage = {
 type MediaGalleryProps = {
   attachments: TaskImage[]
   signedImageUrls: Record<number, string>
+  thumbnailImageUrls?: Record<number, string>
   setPreviewImages: (value: string[]) => void
   setPreviewIndex: (value: number) => void
   setPreviewImage: (value: string | null) => void
@@ -19,6 +20,7 @@ type MediaGalleryProps = {
 export default function MediaGallery({
   attachments,
   signedImageUrls,
+  thumbnailImageUrls = {},
   setPreviewImages,
   setPreviewIndex,
   setPreviewImage,
@@ -43,6 +45,8 @@ export default function MediaGallery({
         <div className="flex gap-2 pb-1">
           {imagesOnly.slice(0, 3).map((img, index) => {
             const currentImage = signedImageUrls[img.id] || img.image_url
+            const thumbnailImage =
+  thumbnailImageUrls[img.id] || currentImage
             const remainingCount = imagesOnly.length - 3
 
             return (
@@ -57,8 +61,8 @@ export default function MediaGallery({
                 className="relative shrink-0"
               >
                 <img
-                  src={currentImage}
-                  alt="Zdjęcie do zadania"
+  src={thumbnailImage}
+  alt="Zdjęcie do zadania"
                   className="h-24 w-24 rounded-2xl border border-stone-200 object-cover shadow-sm"
                 />
 

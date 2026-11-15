@@ -191,6 +191,9 @@ const [commentDraft, setCommentDraft] = useState("");
   const [signedImageUrls, setSignedImageUrls] = useState<
     Record<number, string>
   >({});
+  const [thumbnailImageUrls, setThumbnailImageUrls] = useState<
+  Record<number, string>
+>({});
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -398,40 +401,83 @@ const loadTaskImagesForTasks = async (
   });
 
   const entries = await Promise.all(
-    images.map(async (image) => {
-      if (!image.file_path) {
-        return [
-          image.id,
-          image.image_url,
-        ] as const;
-      }
+  images.map(async (image) => {
+    if (!image.file_path) {
+      return {
+        id: image.id,
+        fullUrl: image.image_url,
+        thumbnailUrl: image.image_url,
+      };
+    }
 
-      const {
-        data: signedData,
-        error: signedError,
-      } = await supabase.storage
+    const [
+      { data: signedData, error: signedError },
+      { data: thumbnailData, error: thumbnailError },
+    ] = await Promise.all([
+      supabase.storage
         .from("task-images")
         .createSignedUrl(
           image.file_path,
           3600,
-        );
+        ),
 
-      return [
-        image.id,
-        !signedError && signedData?.signedUrl
-          ? signedData.signedUrl
-          : image.image_url,
-      ] as const;
-    }),
-  );
+      supabase.storage
+        .from("task-images")
+        .createSignedUrl(
+          image.file_path,
+          3600,
+          {
+            transform: {
+              width: 320,
+              height: 320,
+              resize: "cover",
+              quality: 75,
+            },
+          },
+        ),
+    ]);
 
-  const newSignedUrls =
-    Object.fromEntries(entries);
+    const fullUrl =
+      !signedError && signedData?.signedUrl
+        ? signedData.signedUrl
+        : image.image_url;
 
-  setSignedImageUrls((prev) => ({
-    ...prev,
-    ...newSignedUrls,
-  }));
+    const thumbnailUrl =
+      !thumbnailError && thumbnailData?.signedUrl
+        ? thumbnailData.signedUrl
+        : fullUrl;
+
+    return {
+      id: image.id,
+      fullUrl,
+      thumbnailUrl,
+    };
+  }),
+);
+
+const newSignedUrls = Object.fromEntries(
+  entries.map((entry) => [
+    entry.id,
+    entry.fullUrl,
+  ]),
+);
+
+const newThumbnailUrls = Object.fromEntries(
+  entries.map((entry) => [
+    entry.id,
+    entry.thumbnailUrl,
+  ]),
+);
+
+setSignedImageUrls((prev) => ({
+  ...prev,
+  ...newSignedUrls,
+}));
+
+setThumbnailImageUrls((prev) => ({
+  ...prev,
+  ...newThumbnailUrls,
+}));
 };
 
 const refreshTaskComments = async (
@@ -1394,28 +1440,67 @@ const taskRealtimeConfig = isHotelScopedRealtimeUser
         });
 
         void (async () => {
-          if (!newImage.file_path) {
-            setSignedImageUrls((prev) => ({
-              ...prev,
-              [newImage.id]: newImage.image_url,
-            }));
+  if (!newImage.file_path) {
+    setSignedImageUrls((prev) => ({
+      ...prev,
+      [newImage.id]: newImage.image_url,
+    }));
 
-            return;
-          }
+    setThumbnailImageUrls((prev) => ({
+      ...prev,
+      [newImage.id]: newImage.image_url,
+    }));
 
-          const { data: signedData, error: signedError } =
-            await supabase.storage
-              .from("task-images")
-              .createSignedUrl(newImage.file_path, 3600);
+    return;
+  }
 
-          setSignedImageUrls((prev) => ({
-            ...prev,
-            [newImage.id]:
-              !signedError && signedData?.signedUrl
-                ? signedData.signedUrl
-                : newImage.image_url,
-          }));
-        })();
+  const [
+    { data: signedData, error: signedError },
+    { data: thumbnailData, error: thumbnailError },
+  ] = await Promise.all([
+    supabase.storage
+      .from("task-images")
+      .createSignedUrl(
+        newImage.file_path,
+        3600,
+      ),
+
+    supabase.storage
+      .from("task-images")
+      .createSignedUrl(
+        newImage.file_path,
+        3600,
+        {
+          transform: {
+            width: 320,
+            height: 320,
+            resize: "cover",
+            quality: 75,
+          },
+        },
+      ),
+  ]);
+
+  const fullUrl =
+    !signedError && signedData?.signedUrl
+      ? signedData.signedUrl
+      : newImage.image_url;
+
+  const thumbnailUrl =
+    !thumbnailError && thumbnailData?.signedUrl
+      ? thumbnailData.signedUrl
+      : fullUrl;
+
+  setSignedImageUrls((prev) => ({
+    ...prev,
+    [newImage.id]: fullUrl,
+  }));
+
+  setThumbnailImageUrls((prev) => ({
+    ...prev,
+    [newImage.id]: thumbnailUrl,
+  }));
+})();
       },
     )
     .subscribe();
@@ -3807,6 +3892,7 @@ const renderTaskMessages = (t: Task, mode: string) => {
               <MediaGallery
                 attachments={attachments}
                 signedImageUrls={signedImageUrls}
+                thumbnailImageUrls={thumbnailImageUrls}
                 setPreviewImages={setPreviewImages}
                 setPreviewIndex={setPreviewIndex}
                 setPreviewImage={setPreviewImage}
