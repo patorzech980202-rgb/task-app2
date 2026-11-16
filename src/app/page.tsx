@@ -3156,12 +3156,15 @@ const areaMatches =
 }
 
  if (
-  profile.department_id === 2 &&
+  (profile.department_id === 2 ||
+    profile.department_id === 4) &&
   profile.role === "pracownik"
 ) {
   return (
-    authorProfile?.department_id === 2 &&
-    authorProfile?.hotel_id === profile.hotel_id &&
+    authorProfile?.department_id ===
+      profile.department_id &&
+    authorProfile?.hotel_id ===
+      profile.hotel_id &&
     t.hotel_id === profile.hotel_id &&
     notArchived
   );
@@ -3358,12 +3361,15 @@ const archivedTaskBatches = useMemo(() => {
 }
 
  if (
-  profile.department_id === 2 &&
+  (profile.department_id === 2 ||
+    profile.department_id === 4) &&
   profile.role === "pracownik"
 ) {
   return (
-    authorProfile?.department_id === 2 &&
-    authorProfile?.hotel_id === profile.hotel_id &&
+    authorProfile?.department_id ===
+      profile.department_id &&
+    authorProfile?.hotel_id ===
+      profile.hotel_id &&
     t.hotel_id === profile.hotel_id &&
     t.done &&
     t.archivedBy?.includes(profile.id)
@@ -4559,6 +4565,7 @@ const commentImageUrls = commentImages.map(
                     <option value={1}>POKOJOWE</option>
                     <option value={2}>KONSERWATORZY</option>
                     <option value={3}>RECEPCJA</option>
+                    <option value={4}>PRALNIA</option>
                   </select>
 
                   {selectedDepartment === 1 && (
