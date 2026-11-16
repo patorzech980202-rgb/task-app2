@@ -3155,7 +3155,19 @@ const areaMatches =
   );
 }
 
-    if (
+ if (
+  profile.department_id === 2 &&
+  profile.role === "pracownik"
+) {
+  return (
+    authorProfile?.department_id === 2 &&
+    authorProfile?.hotel_id === profile.hotel_id &&
+    t.hotel_id === profile.hotel_id &&
+    notArchived
+  );
+}
+
+if (
   profile.department_id === 3 &&
   profile.role === "pracownik"
 ) {
@@ -3163,8 +3175,8 @@ const areaMatches =
     authorProfile?.department_id === 3 &&
     authorProfile?.hotel_id === profile.hotel_id &&
     t.hotel_id === profile.hotel_id &&
-    notArchived
-    && !t.done
+    notArchived &&
+    !t.done
   );
 }
 
@@ -3345,7 +3357,20 @@ const archivedTaskBatches = useMemo(() => {
   );
 }
 
-    if (
+ if (
+  profile.department_id === 2 &&
+  profile.role === "pracownik"
+) {
+  return (
+    authorProfile?.department_id === 2 &&
+    authorProfile?.hotel_id === profile.hotel_id &&
+    t.hotel_id === profile.hotel_id &&
+    t.done &&
+    t.archivedBy?.includes(profile.id)
+  );
+}
+
+if (
   profile.department_id === 3 &&
   profile.role === "pracownik"
 ) {
