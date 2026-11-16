@@ -952,7 +952,20 @@ const isHotelScopedUser =
   prof?.role === "kierownik_hotelu";
 
 if (isHotelScopedUser && prof?.hotel_id) {
-  tasksQuery = tasksQuery.eq("hotel_id", prof.hotel_id);
+  if (
+    prof.department_id === 4 &&
+    prof.role === "pracownik"
+  ) {
+    tasksQuery = tasksQuery.in(
+      "hotel_id",
+      [2, 3, 4],
+    );
+  } else {
+    tasksQuery = tasksQuery.eq(
+      "hotel_id",
+      prof.hotel_id,
+    );
+  }
 }
 
 const [
@@ -1701,6 +1714,15 @@ const housekeepingTargetAreaIds = isBulkRoomTask
       ? 1
       : selectedDepartment;
 
+if (
+  targetDepartment === 4 &&
+  targetHotelId === 1
+) {
+  alert("Hotel 1 nie może wysyłać zadań do pralni.");
+  return;
+}
+
+
     if (
   isHousekeepingTeamTarget &&
   !isBulkRoomTask &&
@@ -1721,6 +1743,8 @@ const housekeepingTargetAreaIds = isBulkRoomTask
     }
 
     const generalAreaId = getGeneralAreaId(targetHotelId);
+    const recipientHotelId =
+  targetDepartment === 4 ? 4 : targetHotelId;
     const targets = (candidates || []).filter((p: Profile) => {
   if (isHousekeepingManagerTarget) {
   return p.role === "kierownik";
@@ -1738,7 +1762,7 @@ const housekeepingTargetAreaIds = isBulkRoomTask
     p.role === "pracownik" ||
     (isHousekeepingTeamTarget && p.role === "kierownik_hotelu")
   ) &&
-  p.hotel_id === targetHotelId &&
+  p.hotel_id === recipientHotelId &&
   p.status === "na stanowisku";
 
   if (!basicMatch) return false;
@@ -1772,11 +1796,17 @@ const managerPushTargets = profiles.filter(
     p.role === "kierownik" &&
     (
       p.department_id === targetDepartment ||
-      p.department_id === profile.department_id
+      p.department_id === profile.department_id ||
+      (
+        p.department_id === 1 &&
+        (
+          targetDepartment === 4 ||
+          profile.department_id === 4
+        )
+      )
     ) &&
     p.id !== profile.id,
 );
-
 // Łączymy zwykłych odbiorców z managerami
 // i usuwamy ewentualne duplikaty.
 const pushTargets = Array.from(
@@ -3046,8 +3076,20 @@ const editTask = async (id: number) => {
     }
 
 if (isManager) {
+  const managerDepartmentMatches =
+    profile.department_id === 1
+      ? (
+          t.departmentId === 1 ||
+          (
+            t.departmentId === 4 &&
+            t.hotel_id !== null &&
+            [2, 3, 4].includes(t.hotel_id)
+          )
+        )
+      : t.departmentId === profile.department_id;
+
   return (
-    t.departmentId === profile.department_id &&
+    managerDepartmentMatches &&
     (filterHotel === 0 || t.hotel_id === filterHotel) &&
     notAuthor &&
     notArchived &&
@@ -3102,15 +3144,20 @@ const areaMatches =
 
     const addressedToMe = t.assigneeId === null || t.assigneeId === profile.id;
 
-    return (
-      t.hotel_id === profile.hotel_id &&
-      t.departmentId === profile.department_id &&
-      addressedToMe &&
-      areaMatches &&
-      notAuthor &&
-      profile.status === "na stanowisku" &&
-      notArchived 
-    );
+   const hotelMatches =
+  profile.department_id === 4
+    ? t.hotel_id !== null && [2, 3, 4].includes(t.hotel_id)
+    : t.hotel_id === profile.hotel_id;
+
+return (
+  hotelMatches &&
+  t.departmentId === profile.department_id &&
+  addressedToMe &&
+  areaMatches &&
+  notAuthor &&
+  profile.status === "na stanowisku" &&
+  notArchived
+); 
   }), [
   tasks,
   profile,
@@ -3137,9 +3184,17 @@ const areaMatches =
   return !archivedByAnyone;
 }
 
-    if (isManager) {
+   if (isManager) {
+  const managerAuthorDepartmentMatches =
+    profile.department_id === 1
+      ? (
+          authorProfile?.department_id === 1 ||
+          authorProfile?.department_id === 4
+        )
+      : authorProfile?.department_id === profile.department_id;
+
   return (
-    authorProfile?.department_id === profile.department_id &&
+    managerAuthorDepartmentMatches &&
     (filterHotel === 0 || t.hotel_id === filterHotel) &&
     notArchived &&
     (profile.department_id !== 3 || !t.done)
@@ -3290,12 +3345,24 @@ const archivedTaskBatches = useMemo(() => {
 }
 
     if (isManager) {
-      return (
-        t.departmentId === profile.department_id &&
-        (filterHotel === 0 || t.hotel_id === filterHotel) &&
-        t.done
-      );
-    }
+  const managerDepartmentMatches =
+    profile.department_id === 1
+      ? (
+          t.departmentId === 1 ||
+          (
+            t.departmentId === 4 &&
+            t.hotel_id !== null &&
+            [2, 3, 4].includes(t.hotel_id)
+          )
+        )
+      : t.departmentId === profile.department_id;
+
+  return (
+    managerDepartmentMatches &&
+    (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    t.done
+  );
+}
 
     if (isHotelManager) {
   const wasDirectlyAssignedToMe = t.assigneeId === profile.id;
@@ -3345,12 +3412,20 @@ const archivedTaskBatches = useMemo(() => {
 }
 
     if (isManager) {
-      return (
-        authorProfile?.department_id === profile.department_id &&
-        (filterHotel === 0 || t.hotel_id === filterHotel) &&
-        t.done
-      );
-    }
+  const managerAuthorDepartmentMatches =
+    profile.department_id === 1
+      ? (
+          authorProfile?.department_id === 1 ||
+          authorProfile?.department_id === 4
+        )
+      : authorProfile?.department_id === profile.department_id;
+
+  return (
+    managerAuthorDepartmentMatches &&
+    (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    t.done
+  );
+}
 
     if (isHotelManager) {
   return (
@@ -4519,10 +4594,17 @@ const commentImageUrls = commentImages.map(
                   className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                   value={selectedHotel}
                   onChange={(e) => {
-                    setSelectedHotel(Number(e.target.value));
-                    setSelectedArea(null);
-                    setSelectedAreas([]);
-                  }}
+  const newHotelId = Number(e.target.value);
+
+  setSelectedHotel(newHotelId);
+
+  if (newHotelId === 1 && selectedDepartment === 4) {
+    setSelectedDepartment(1);
+  }
+
+  setSelectedArea(null);
+  setSelectedAreas([]);
+}}
                 >
                   {hotels.map((h) => (
                     <option key={h.id} value={h.id}>
@@ -4565,7 +4647,11 @@ const commentImageUrls = commentImages.map(
                     <option value={1}>POKOJOWE</option>
                     <option value={2}>KONSERWATORZY</option>
                     <option value={3}>RECEPCJA</option>
-                    <option value={4}>PRALNIA</option>
+                    {(isManager || isAdmin
+  ? selectedHotel !== 1
+  : profile?.hotel_id !== 1) && (
+  <option value={4}>PRALNIA</option>
+)}
                   </select>
 
                   {selectedDepartment === 1 && (
