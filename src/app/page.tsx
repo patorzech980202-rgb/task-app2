@@ -124,8 +124,8 @@ type SectionKey = "otrzymane" | "wysłane" | "archiwum";
 
 export default function Home() {
   const [selectedTargetType, setSelectedTargetType] = useState<
-    "department" | "housekeeping_manager"
-  >("department");
+  "department" | "housekeeping_manager" | "reception_manager"
+>("department");
   const [selectedDepartment, setSelectedDepartment] = useState(1);
   const [selectedRecipientType, setSelectedRecipientType] = useState<
     "team" | "hotel_manager"
@@ -1732,6 +1732,9 @@ const archiveAllAppErrors = async () => {
     const isHousekeepingManagerTarget =
       selectedTargetType === "housekeeping_manager";
 
+    const isReceptionManagerTarget =
+      selectedTargetType === "reception_manager";  
+
     const isHotelManagerTarget =
       selectedTargetType === "department" &&
       selectedDepartment === 1 &&
@@ -1761,8 +1764,10 @@ const housekeepingTargetAreaIds = isBulkRoomTask
   : selectedAreas;
 
     const targetDepartment = isHousekeepingManagerTarget
-      ? 1
-      : selectedDepartment;
+  ? 1
+  : isReceptionManagerTarget
+    ? 3
+    : selectedDepartment;
 
 if (
   targetDepartment === 4 &&
@@ -1796,7 +1801,10 @@ if (
     const recipientHotelId =
   targetDepartment === 4 ? 4 : targetHotelId;
     const targets = (candidates || []).filter((p: Profile) => {
-  if (isHousekeepingManagerTarget) {
+  if (
+  isHousekeepingManagerTarget ||
+  isReceptionManagerTarget
+) {
   return p.role === "kierownik";
 }
 
@@ -1880,13 +1888,19 @@ const pushTargets = Array.from(
 );
 
 if (
-  (isHousekeepingManagerTarget || isHotelManagerTarget) &&
+  (
+    isHousekeepingManagerTarget ||
+    isReceptionManagerTarget ||
+    isHotelManagerTarget
+  ) &&
   targets.length === 0
 ) {
   alert(
     isHotelManagerTarget
       ? "Nie znaleziono konta kierowniczki pokojowych dla tego hotelu."
-      : "Nie znaleziono konta Managera pokojowych.",
+      : isReceptionManagerTarget
+        ? "Nie znaleziono konta Managera recepcji."
+        : "Nie znaleziono konta Managera pokojowych.",
   );
   return;
 }
@@ -1898,10 +1912,19 @@ if (
   return;
 }
 
+if (isReceptionManagerTarget && targets.length > 1) {
+  alert(
+    "Znaleziono więcej niż jedno konto Managera recepcji. Sprawdź role kont w Supabase.",
+  );
+  return;
+}
+
     const directAssignee =
-      isHousekeepingManagerTarget || isHotelManagerTarget
-        ? targets[0]
-        : null;
+  isHousekeepingManagerTarget ||
+  isReceptionManagerTarget ||
+  isHotelManagerTarget
+    ? targets[0]
+    : null;
 
    let batchId: number | null = null;
 
@@ -4762,9 +4785,12 @@ const commentImageUrls = commentImages.map(
                 className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                 value={selectedTargetType}
                 onChange={(e) => {
-  setSelectedTargetType(
-    e.target.value as "department" | "housekeeping_manager",
-  );
+ setSelectedTargetType(
+  e.target.value as
+    | "department"
+    | "housekeeping_manager"
+    | "reception_manager",
+);
   setSelectedArea(null);
   setSelectedAreas([]);
   setSelectedRecipientType("team");
@@ -4772,6 +4798,7 @@ const commentImageUrls = commentImages.map(
               >
                 <option value="department">Dział</option>
                 <option value="housekeeping_manager">Manager pokojowych</option>
+                <option value="reception_manager">Manager recepcji</option>
               </select>
 
               {selectedTargetType === "department" && (
