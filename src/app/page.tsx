@@ -1847,11 +1847,22 @@ const managerPushTargets = profiles.filter(
     (
       p.department_id === targetDepartment ||
       p.department_id === profile.department_id ||
+
+      // Manager pokojowych: POKOJOWE + PRALNIA
       (
         p.department_id === 1 &&
         (
           targetDepartment === 4 ||
           profile.department_id === 4
+        )
+      ) ||
+
+      // Manager recepcji: RECEPCJA + KONSERWATORZY
+      (
+        p.department_id === 3 &&
+        (
+          targetDepartment === 2 ||
+          profile.department_id === 2
         )
       )
     ) &&
@@ -3263,20 +3274,30 @@ return (
   return !archivedByAnyone;
 }
 
-   if (isManager) {
-  const managerAuthorDepartmentMatches =
+ if (isManager) {
+  const managerDepartmentMatches =
     profile.department_id === 1
       ? (
-          authorProfile?.department_id === 1 ||
-          authorProfile?.department_id === 4
+          t.departmentId === 1 ||
+          (
+            t.departmentId === 4 &&
+            t.hotel_id !== null &&
+            [2, 3, 4].includes(t.hotel_id)
+          )
         )
-      : authorProfile?.department_id === profile.department_id;
+      : profile.department_id === 3
+        ? (
+            t.departmentId === 3 ||
+            t.departmentId === 2
+          )
+        : t.departmentId === profile.department_id;
 
   return (
-    managerAuthorDepartmentMatches &&
+    managerDepartmentMatches &&
     (filterHotel === 0 || t.hotel_id === filterHotel) &&
+    t.authorId !== profile.id &&
     notArchived &&
-    (profile.department_id !== 3 || !t.done)
+    !t.done
   );
 }
 
@@ -3422,8 +3443,7 @@ const archivedTaskBatches = useMemo(() => {
     (t.archivedBy?.length ?? 0) > 0
   );
 }
-
-    if (isManager) {
+  if (isManager) {
   const managerDepartmentMatches =
     profile.department_id === 1
       ? (
@@ -3434,7 +3454,12 @@ const archivedTaskBatches = useMemo(() => {
             [2, 3, 4].includes(t.hotel_id)
           )
         )
-      : t.departmentId === profile.department_id;
+      : profile.department_id === 3
+        ? (
+            t.departmentId === 3 ||
+            t.departmentId === 2
+          )
+        : t.departmentId === profile.department_id;
 
   return (
     managerDepartmentMatches &&
@@ -3497,13 +3522,18 @@ const archivedTaskBatches = useMemo(() => {
           authorProfile?.department_id === 1 ||
           authorProfile?.department_id === 4
         )
-      : authorProfile?.department_id === profile.department_id;
+      : profile.department_id === 3
+        ? (
+            authorProfile?.department_id === 3 ||
+            authorProfile?.department_id === 2
+          )
+        : authorProfile?.department_id === profile.department_id;
 
-  return (
-    managerAuthorDepartmentMatches &&
-    (filterHotel === 0 || t.hotel_id === filterHotel) &&
-    t.done
-  );
+ return (
+  managerAuthorDepartmentMatches &&
+  (filterHotel === 0 || t.hotel_id === filterHotel) &&
+  t.done
+);
 }
 
     if (isHotelManager) {
