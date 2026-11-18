@@ -183,6 +183,7 @@ const commentImagesByCommentId = useMemo(() => {
   const [isSendingComment, setIsSendingComment] = useState(false);
   const [appErrors, setAppErrors] = useState<AppError[]>([]);
   const [errorsLoading, setErrorsLoading] = useState(false);
+  const [showArchivedErrors, setShowArchivedErrors] = useState(false);
   const [openCommentsTaskId, setOpenCommentsTaskId] = useState<number | null>(
   null,
 );
@@ -1644,16 +1645,27 @@ useEffect(() => {
   const isManager = profile?.role === "kierownik";
   const isAdmin = profile?.role === "administrator"|| profile?.role === "admin";
 
-  const loadAppErrors = async () => {
+  const loadAppErrors = async (archivedMode?: boolean) => {
   if (!isAdmin) return;
 
   setErrorsLoading(true);
 
-  const { data, error } = await supabase
-    .from("app_errors")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(100);
+const archived =
+  typeof archivedMode === "boolean"
+    ? archivedMode
+    : showArchivedErrors;
+
+  let errorsQuery = supabase
+  .from("app_errors")
+  .select("*")
+  .order("created_at", { ascending: false })
+  .limit(100);
+
+errorsQuery = archived
+  ? errorsQuery.not("archived_at", "is", null)
+  : errorsQuery.is("archived_at", null);
+
+const { data, error } = await errorsQuery;
 
   if (error) {
     console.error("Błąd pobierania app_errors:", error);
@@ -1663,6 +1675,44 @@ useEffect(() => {
 
   setAppErrors((data || []) as AppError[]);
   setErrorsLoading(false);
+};
+
+const archiveAppError = async (errorId: number) => {
+  const { error } = await supabase
+    .from("app_errors")
+    .update({
+      archived_at: new Date().toISOString(),
+    })
+    .eq("id", errorId);
+
+  if (error) {
+    console.error("Błąd archiwizacji app_error:", error);
+    alert("Nie udało się zarchiwizować błędu.");
+    return;
+  }
+
+  setAppErrors((current) =>
+    current.filter((item) => item.id !== errorId),
+  );
+};
+
+const archiveAllAppErrors = async () => {
+  if (appErrors.length === 0) return;
+
+  const { error } = await supabase
+    .from("app_errors")
+    .update({
+      archived_at: new Date().toISOString(),
+    })
+    .is("archived_at", null);
+
+  if (error) {
+    console.error("Błąd archiwizacji wszystkich app_errors:", error);
+    alert("Nie udało się zarchiwizować wszystkich błędów.");
+    return;
+  }
+
+  setAppErrors([]);
 };
 
  const addTask = async () => {
@@ -4503,14 +4553,37 @@ const commentImageUrls = commentImages.map(
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={loadAppErrors}
-        disabled={errorsLoading}
-        className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50"
-      >
-        {errorsLoading ? "Ładowanie..." : "Odśwież"}
-      </button>
+     <div className="flex gap-2">
+     <button
+  type="button"
+  onClick={() => {
+    const nextMode = !showArchivedErrors;
+    setShowArchivedErrors(nextMode);
+    void loadAppErrors(nextMode);
+  }}
+  disabled={errorsLoading}
+  className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 disabled:opacity-50"
+>
+  {showArchivedErrors ? "Pokaż aktywne" : "Pokaż archiwum"}
+</button>
+  <button
+    type="button"
+    onClick={() => void archiveAllAppErrors()}
+    disabled={errorsLoading || appErrors.length === 0}
+    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 disabled:opacity-50"
+  >
+    Archiwizuj wszystkie
+  </button>
+
+  <button
+    type="button"
+    onClick={() => void loadAppErrors()}
+    disabled={errorsLoading}
+    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50"
+  >
+    {errorsLoading ? "Ładowanie..." : "Odśwież"}
+  </button>
+</div>
     </div>
 
     <div className="mt-4 space-y-2">
@@ -4539,6 +4612,17 @@ const commentImageUrls = commentImages.map(
                 <p className="mt-1 text-sm text-stone-800">
                   {appError.message}
                 </p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void archiveAppError(appError.id);
+                  }}
+                  className="mt-3 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700"
+                >
+                  Archiwizuj
+                </button>
               </div>
             </summary>
 
