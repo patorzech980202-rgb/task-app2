@@ -2126,6 +2126,44 @@ const uploadPromise = (async () => {
 await uploadPromise;
 
 // Pushe lecą równolegle do wszystkich odbiorców.
+
+const sendPushWithRetry = async (
+  userId: string,
+  title: string,
+  body: string,
+) => {
+  const send = () =>
+    fetch(
+      "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          title,
+          body,
+        }),
+      },
+    );
+
+  try {
+    return await send();
+  } catch (firstError) {
+    console.warn(
+      "Pierwsza próba push nie powiodła się. Ponawiam...",
+      firstError,
+    );
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 1500),
+    );
+
+    return await send();
+  }
+};
+
 const pushPromise = Promise.all(
  pushTargets.map(async (target) => {
     try {
@@ -2168,20 +2206,11 @@ if (
         ? `Do wykonania: ${targetRoomTasks.length} pokoi`
         : taskText;
 
-      const response = await fetch(
-        "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            userId: target.id,
-            title: pushTitle,
-            body: pushBody,
-          }),
-        },
-      );
+      const response = await sendPushWithRetry(
+  target.id,
+  pushTitle,
+  pushBody,
+);
 
       if (!response.ok) {
         const responseText = await response.text();
