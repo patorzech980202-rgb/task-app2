@@ -4594,7 +4594,7 @@ const commentImageUrls = commentImages.map(
 
         {isAdmin && (
   <div className="mb-4 rounded-3xl border border-red-200 bg-white p-4 shadow-sm">
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 className="font-bold text-stone-900">
           ⚠️ Panel błędów
@@ -4605,7 +4605,7 @@ const commentImageUrls = commentImages.map(
         </p>
       </div>
 
-     <div className="flex gap-2">
+     <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
      <button
   type="button"
   onClick={() => {
@@ -4631,7 +4631,7 @@ const commentImageUrls = commentImages.map(
     type="button"
     onClick={() => void loadAppErrors()}
     disabled={errorsLoading}
-    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50"
+    className="col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50 sm:col-span-1"
   >
     {errorsLoading ? "Ładowanie..." : "Odśwież"}
   </button>
