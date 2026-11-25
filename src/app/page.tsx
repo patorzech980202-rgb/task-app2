@@ -1645,6 +1645,17 @@ useEffect(() => {
   const isManager = profile?.role === "kierownik";
   const isAdmin = profile?.role === "administrator"|| profile?.role === "admin";
 
+  useEffect(() => {
+  if (isManager && profile?.department_id === 2) {
+    setSelectedHotel((prev) =>
+      [2, 3, 4].includes(prev) ? prev : 2
+    );
+    setFilterHotel((prev) =>
+      [0, 2, 3, 4].includes(prev) ? prev : 0
+    );
+  }
+}, [isManager, profile?.department_id]);
+
   const loadAppErrors = async (archivedMode?: boolean) => {
   if (!isAdmin) return;
 
@@ -1852,6 +1863,10 @@ if (
 const managerPushTargets = profiles.filter(
   (p: Profile) =>
     p.role === "kierownik" &&
+    (
+      p.department_id !== 2 ||
+      [1, 2, 3, 4].includes(targetHotelId)
+    ) &&
     (
       p.department_id === targetDepartment ||
       p.department_id === profile.department_id ||
@@ -3173,6 +3188,15 @@ const editTask = async (id: number) => {
   const received = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
+
+    if (
+      profile.role === "kierownik" &&
+      profile.department_id === 2 &&
+      (t.hotel_id === null ||
+        ![2, 3, 4].includes(t.hotel_id))
+    ) {
+      return false;
+    }
     if (t.cancelled_at) return false;
 
     const notArchived = !t.archivedBy?.includes(profile.id);
@@ -3282,8 +3306,17 @@ return (
 ]);
 
   const sent = useMemo(() => tasks.filter((t) => {
-    if (!profile) return false;
+   if (!profile) return false;
     if (t.history_archived_at) return false;
+
+    if (
+      profile.role === "kierownik" &&
+      profile.department_id === 2 &&
+      (t.hotel_id === null ||
+        ![2, 3, 4].includes(t.hotel_id))
+    ) {
+      return false;
+    }
     if (t.cancelled_at) return false;
 
     const notArchived = !t.archivedBy?.includes(profile.id);
@@ -3459,6 +3492,15 @@ const archivedTaskBatches = useMemo(() => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
 
+    if (
+      profile.role === "kierownik" &&
+      profile.department_id === 2 &&
+      (t.hotel_id === null ||
+        ![2, 3, 4].includes(t.hotel_id))
+    ) {
+      return false;
+    }
+
    if (isAdmin) {
   return (
     t.done &&
@@ -3527,6 +3569,15 @@ const archivedTaskBatches = useMemo(() => {
   const archivedSent = useMemo(() => tasks.filter((t) => {
     if (!profile) return false;
     if (t.history_archived_at) return false;
+
+    if (
+      profile.role === "kierownik" &&
+      profile.department_id === 2 &&
+      (t.hotel_id === null ||
+        ![2, 3, 4].includes(t.hotel_id))
+    ) {
+      return false;
+    }
 
     const authorProfile = profilesById.get(t.authorId);
 
@@ -4719,7 +4770,10 @@ const commentImageUrls = commentImages.map(
               onChange={(e) => setFilterHotel(Number(e.target.value))}
             >
               <option value={0}>Wszystkie hotele</option>
-              {hotels.map((h) => (
+              {hotels.filter((h) =>
+  !(isManager && profile?.department_id === 2) ||
+  [1, 2, 3, 4].includes(h.id)
+).map((h) => (
                 <option key={h.id} value={h.id}>
                   {h.name}
                 </option>
@@ -4771,7 +4825,10 @@ const commentImageUrls = commentImages.map(
   setSelectedAreas([]);
 }}
                 >
-                  {hotels.map((h) => (
+                  {hotels.filter((h) =>
+  !(isManager && profile?.department_id === 2) ||
+  [1, 2, 3, 4].includes(h.id)
+).map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.name}
                     </option>
