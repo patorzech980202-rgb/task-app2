@@ -120,11 +120,34 @@ type Profile = {
   current_area_ids: number[] | null;
 };
 
+type DirectTaskRecipient = {
+  user_id: string;
+  name: string;
+  surname: string | null;
+  hotel_id: number;
+  department_id: number;
+  confirmed_at: string | null;
+};
+
+type DirectTask = {
+  id: number;
+  title: string;
+  author_id: string;
+  created_at: string;
+  archived_at: string | null;
+  recipients: DirectTaskRecipient[];
+};
+
 type SectionKey = "otrzymane" | "wysłane" | "archiwum";
+
+type DirectTaskHistory = DirectTask & {
+  history_archived_at: string;
+  history_archived_by: string;
+};
 
 export default function Home() {
   const [selectedTargetType, setSelectedTargetType] = useState<
-  "department" | "housekeeping_manager" | "reception_manager"
+  "department" | "housekeeping_manager" | "reception_manager" | "selected_workers"
 >("department");
   const [selectedDepartment, setSelectedDepartment] = useState(1);
   const [selectedRecipientType, setSelectedRecipientType] = useState<
@@ -159,6 +182,111 @@ export default function Home() {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [directTasks, setDirectTasks] = useState<DirectTask[]>([]);
+  const [confirmingDirectTaskId, setConfirmingDirectTaskId] =
+  useState<number | null>(null);
+  const [archivingDirectTaskId, setArchivingDirectTaskId] =
+  useState<number | null>(null);
+  const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+  const [workerSearch, setWorkerSearch] = useState("");
+  const [showWorkerPicker, setShowWorkerPicker] = useState(false);
+
+const [directTasksRefreshKey, setDirectTasksRefreshKey] = useState(0);
+
+const [directHistoryTasks, setDirectHistoryTasks] =
+  useState<DirectTaskHistory[]>([]);
+
+useEffect(() => {
+  if (
+    !profile ||
+    !["admin", "administrator"].includes(profile.role)
+  ) {
+    setDirectHistoryTasks([]);
+    return;
+  }
+
+  let stopped = false;
+
+  const loadDirectHistory = async () => {
+    const { data, error } = await supabase.rpc(
+      "get_direct_task_history"
+    );
+
+    if (error) {
+      console.error(
+        "Błąd pobierania archiwum indywidualnego:",
+        error
+      );
+      return;
+    }
+
+    if (!stopped) {
+      setDirectHistoryTasks(
+        (data || []) as DirectTaskHistory[]
+      );
+    }
+  };
+
+  void loadDirectHistory();
+
+  return () => {
+    stopped = true;
+  };
+}, [profile?.id, profile?.role, directTasksRefreshKey]);
+
+useEffect(() => {
+  if (!profile?.id) {
+    setDirectTasks([]);
+    return;
+  }
+
+  let stopped = false;
+  let inFlight = false;
+
+  const loadDirectTasks = async () => {
+    if (stopped || inFlight) return;
+
+    inFlight = true;
+
+    try {
+      const { data, error } = await supabase.rpc("get_direct_tasks");
+
+      if (error) {
+        console.error("Błąd pobierania zadań indywidualnych:", error);
+        return;
+      }
+
+      if (!stopped) {
+        setDirectTasks((data || []) as DirectTask[]);
+      }
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  void loadDirectTasks();
+
+  const interval = window.setInterval(() => {
+    if (document.visibilityState === "visible") {
+      void loadDirectTasks();
+    }
+  }, 20000);
+
+  const handleFocus = () => {
+    void loadDirectTasks();
+  };
+
+  window.addEventListener("focus", handleFocus);
+  window.addEventListener("online", handleFocus);
+
+  return () => {
+    stopped = true;
+    window.clearInterval(interval);
+    window.removeEventListener("focus", handleFocus);
+    window.removeEventListener("online", handleFocus);
+  };
+}, [profile?.id, directTasksRefreshKey]);
+
   const [taskImages, setTaskImages] = useState<TaskImage[]>([]);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
   const [taskCommentCounts, setTaskCommentCounts] = useState<
@@ -1641,20 +1769,83 @@ useEffect(() => {
     setProfile(null);
   };
 
+  const directReceived = directTasks.filter(
+  (t) =>
+    !t.archived_at &&
+    t.recipients.some(
+      (r) =>
+        r.user_id === profile?.id &&
+        !r.confirmed_at
+    )
+);
+
+const directSent = directTasks.filter(
+  (t) =>
+    t.author_id === profile?.id &&
+    !t.archived_at
+);
+
+const directArchivedReceived = directTasks.filter(
+  (t) =>
+    t.recipients.some(
+      (r) =>
+        r.user_id === profile?.id &&
+        !!r.confirmed_at
+    )
+);
+
+const directArchivedSent = directTasks.filter(
+  (t) =>
+    t.author_id === profile?.id &&
+    !!t.archived_at
+);
+
   const isHotelManager = profile?.role === "kierownik_hotelu";
   const isManager = profile?.role === "kierownik";
   const isAdmin = profile?.role === "administrator"|| profile?.role === "admin";
 
-  useEffect(() => {
-  if (isManager && profile?.department_id === 2) {
-    setSelectedHotel((prev) =>
-      [2, 3, 4].includes(prev) ? prev : 2
-    );
-    setFilterHotel((prev) =>
-      [0, 2, 3, 4].includes(prev) ? prev : 0
-    );
-  }
-}, [isManager, profile?.department_id]);
+  const allowedWorkerDepartments =
+  profile?.department_id === 1
+    ? [1, 4]
+    : profile?.department_id === 2
+      ? [2]
+      : profile?.department_id === 3
+        ? [2, 3]
+        : [];
+
+const availableWorkers = isManager
+  ? profiles
+      .filter(
+        (p) =>
+          p.id !== profile?.id &&
+          allowedWorkerDepartments.includes(p.department_id) &&
+          ["pracownik", "kierownik_hotelu", "kierownik"].includes(p.role)
+      )
+      .sort((a, b) =>
+        `${a.surname || ""} ${a.name}`.localeCompare(
+          `${b.surname || ""} ${b.name}`,
+          "pl"
+        )
+      )
+  : [];
+
+const normalizeWorkerSearch = (value: string) =>
+  value
+    .toLocaleLowerCase("pl-PL")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ł/g, "l")
+    .trim();
+
+const filteredWorkers = availableWorkers.filter((p) =>
+  normalizeWorkerSearch(workerSearch)
+    .split(/\s+/)
+    .every((word) =>
+      normalizeWorkerSearch(
+        `${p.name} ${p.surname || ""}`
+      ).includes(word)
+    )
+);
 
   const loadAppErrors = async (archivedMode?: boolean) => {
   if (!isAdmin) return;
@@ -1726,7 +1917,127 @@ const archiveAllAppErrors = async () => {
   setAppErrors([]);
 };
 
+const addDirectTask = async () => {
+  if (isSending || !profile || !isManager) return;
+
+  const taskText = newTask.trim();
+  const recipientIds = [...new Set(selectedWorkerIds)];
+
+  if (!taskText) {
+    alert("Wpisz treść zadania.");
+    return;
+  }
+
+  if (recipientIds.length === 0) {
+    alert("Wybierz przynajmniej jednego pracownika.");
+    return;
+  }
+
+  if (selectedAttachments.length > 0) {
+    alert("Usuń załączniki przed wysłaniem zadania indywidualnego.");
+    return;
+  }
+
+  setIsSending(true);
+
+  try {
+    const { data: directTaskId, error } = await supabase.rpc(
+      "create_direct_task",
+      {
+        p_title: taskText,
+        p_user_ids: recipientIds,
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    // Zadanie zostało zapisane w bazie.
+
+    setNewTask("");
+    setSelectedWorkerIds([]);
+    setWorkerSearch("");
+    setShowWorkerPicker(false);
+    setSelectedTargetType("department");
+    setSelectedRecipientType("team");
+    setSelectedArea(null);
+    setSelectedAreas([]);
+    setShowTaskAreas(false);
+    setBulkRoomInput("");
+    setShowForm(false);
+
+    setDirectTasksRefreshKey((prev) => prev + 1);
+
+    setOpenSections((prev) => ({
+      ...prev,
+      wysłane: true,
+    }));
+
+    // Powiadomienia wyłącznie do wybranych odbiorców.
+
+    await Promise.allSettled(
+      recipientIds.map(async (userId) => {
+        try {
+          const send = () =>
+            fetch(
+              "https://ueqbjgjmalktqwkbwzkm.functions.supabase.co/send-push",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  userId,
+                  title: "Nowe zadanie do potwierdzenia",
+                  body: "Otwórz Task Hotel i zapoznaj się z zadaniem.",
+                }),
+              }
+            );
+
+          let response: Response;
+
+          try {
+            response = await send();
+          } catch {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1500)
+            );
+
+            response = await send();
+          }
+
+          if (!response.ok) {
+            throw new Error(`Push HTTP ${response.status}`);
+          }
+        } catch (pushError) {
+          await logAppError(
+            "task_push_error",
+            pushError instanceof Error
+              ? pushError.message
+              : "Błąd powiadomienia indywidualnego",
+            {
+              directTaskId,
+              recipientUserId: userId,
+              taskType: "direct",
+            }
+          );
+        }
+      })
+    );
+  } catch (error) {
+    console.error("addDirectTask error:", error);
+    alert("Nie udało się wysłać zadania indywidualnego.");
+  } finally {
+    setIsSending(false);
+  }
+};
+
  const addTask = async () => {
+  if (selectedTargetType === "selected_workers") {
+    await addDirectTask();
+    return;
+  }
   if (isSending) return;
   if (!newTask.trim() || !profile) return;
 
@@ -2371,6 +2682,33 @@ results.forEach((result) => {
   }
 };
 
+const confirmDirectTask = async (id: number) => {
+  if (!profile || confirmingDirectTaskId !== null) return;
+
+  setConfirmingDirectTaskId(id);
+
+  try {
+    const { error } = await supabase.rpc(
+      "confirm_direct_task",
+      {
+        p_task_id: id,
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    setDirectTasksRefreshKey((prev) => prev + 1);
+
+  } catch (error) {
+    console.error("confirmDirectTask error:", error);
+    alert("Nie udało się potwierdzić zadania.");
+  } finally {
+    setConfirmingDirectTaskId(null);
+  }
+};
+
   const markDone = async (id: number) => {
   if (!profile) return;
 
@@ -2422,6 +2760,44 @@ results.forEach((result) => {
       taskId: id,
     },
   );
+};
+
+const archiveDirectTask = async (id: number) => {
+  if (!profile || archivingDirectTaskId !== null) return;
+
+  const task = directTasks.find((t) => t.id === id);
+
+  if (!task || task.author_id !== profile.id) return;
+
+  if (
+    task.recipients.length === 0 ||
+    task.recipients.some((r) => !r.confirmed_at)
+  ) {
+    alert("Nie wszyscy pracownicy potwierdzili zadanie.");
+    return;
+  }
+
+  setArchivingDirectTaskId(id);
+
+  try {
+    const { error } = await supabase.rpc(
+      "archive_direct_task",
+      {
+        p_task_id: id,
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    setDirectTasksRefreshKey((prev) => prev + 1);
+  } catch (error) {
+    console.error("archiveDirectTask error:", error);
+    alert("Nie udało się zarchiwizować zadania.");
+  } finally {
+    setArchivingDirectTaskId(null);
+  }
 };
 
   const archiveTask = async (id: number) => {
@@ -3061,8 +3437,34 @@ const editTask = async (id: number) => {
     ),
   );
 
+    const {
+    data: directArchivedCount,
+    error: directArchiveError,
+  } = await supabase.rpc("archive_old_direct_tasks");
+
+  setDirectTasksRefreshKey((prev) => prev + 1);
+
+  if (directArchiveError) {
+    await logAppError(
+      "history_archive_error",
+      directArchiveError.message,
+      {
+        taskType: "direct",
+      }
+    );
+
+    alert(
+      `Przeniesiono zwykłe zadania: ${data?.length || 0}.\n` +
+      "Nie udało się przenieść zadań indywidualnych."
+    );
+
+    return;
+  }
+
   alert(
-    `Przeniesiono ${data?.length || 0} zadań do archiwum historycznego.`,
+    `Przeniesiono do archiwum historycznego:\n\n` +
+    `Zwykłe zadania: ${data?.length || 0}\n` +
+    `Zadania indywidualne: ${directArchivedCount || 0}`
   );
 };
 
@@ -3193,7 +3595,7 @@ const editTask = async (id: number) => {
       profile.role === "kierownik" &&
       profile.department_id === 2 &&
       (t.hotel_id === null ||
-        ![2, 3, 4].includes(t.hotel_id))
+        ![1, 2, 3, 4].includes(t.hotel_id))
     ) {
       return false;
     }
@@ -3313,7 +3715,7 @@ return (
       profile.role === "kierownik" &&
       profile.department_id === 2 &&
       (t.hotel_id === null ||
-        ![2, 3, 4].includes(t.hotel_id))
+        ![1, 2, 3, 4].includes(t.hotel_id))
     ) {
       return false;
     }
@@ -3496,7 +3898,7 @@ const archivedTaskBatches = useMemo(() => {
       profile.role === "kierownik" &&
       profile.department_id === 2 &&
       (t.hotel_id === null ||
-        ![2, 3, 4].includes(t.hotel_id))
+        ![1, 2, 3, 4].includes(t.hotel_id))
     ) {
       return false;
     }
@@ -3574,7 +3976,7 @@ const archivedTaskBatches = useMemo(() => {
       profile.role === "kierownik" &&
       profile.department_id === 2 &&
       (t.hotel_id === null ||
-        ![2, 3, 4].includes(t.hotel_id))
+        ![1, 2, 3, 4].includes(t.hotel_id))
     ) {
       return false;
     }
@@ -4108,6 +4510,93 @@ const renderTaskMessages = (t: Task, mode: string) => {
   );
 };
 
+const matchesDirectArchiveSearch = (t: DirectTask) => {
+  const searchableText = [
+    t.title,
+    getProfileName(t.author_id),
+    ...t.recipients.map(
+      (r) => `${r.name} ${r.surname || ""}`
+    ),
+  ].join(" ");
+
+  return normalizeWorkerSearch(searchableText).includes(
+    normalizeWorkerSearch(archiveSearch)
+  );
+};
+
+const filteredDirectArchivedReceived =
+  directArchivedReceived.filter(matchesDirectArchiveSearch);
+
+const filteredDirectArchivedSent =
+  directArchivedSent.filter(matchesDirectArchiveSearch);
+
+const renderDirectArchivedTasks = (
+  list: DirectTask[],
+  mode: "received" | "sent"
+) => {
+  return list.map((t) => (
+    <div
+      key={`direct-archived-${mode}-${t.id}`}
+      className="mb-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
+    >
+      <span className="rounded-lg bg-green-100 px-2 py-1 text-xs font-bold text-green-800">
+        {mode === "sent"
+          ? "WSZYSCY POTWIERDZILI"
+          : "ZAPOZNANO SIĘ"}
+      </span>
+
+      <p className="mt-3 whitespace-pre-wrap break-words text-sm font-semibold text-stone-900">
+        {t.title}
+      </p>
+
+      <p className="mt-2 text-xs text-stone-500">
+        Od: {getProfileName(t.author_id)}
+      </p>
+
+      <p className="mt-1 text-xs text-stone-400">
+        Wysłano:{" "}
+        {new Date(t.created_at).toLocaleString("pl-PL", {
+          timeZone: "Europe/Warsaw",
+        })}
+      </p>
+
+      <div className="mt-3 space-y-2 rounded-xl bg-stone-50 p-3">
+        {t.recipients.map((r) => (
+          <div
+            key={r.user_id}
+            className="border-b border-stone-200 pb-2 last:border-0"
+          >
+            <p className="text-sm font-semibold text-stone-700">
+              {r.name} {r.surname}
+            </p>
+
+            {r.confirmed_at && (
+              <p className="text-xs text-green-700">
+                ✓ Potwierdzono:{" "}
+                {new Date(r.confirmed_at).toLocaleString(
+                  "pl-PL",
+                  {
+                    timeZone: "Europe/Warsaw",
+                  }
+                )}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {mode === "sent" && t.archived_at && (
+        <p className="mt-3 text-xs text-stone-400">
+          Zarchiwizowano:{" "}
+          {new Date(t.archived_at).toLocaleString("pl-PL", {
+            timeZone: "Europe/Warsaw",
+          })}
+        </p>
+      )}
+    </div>
+  ));
+};
+
   const renderTasks = (list: Task[], mode: string) => {
     if (list.length === 0) {
       return (
@@ -4464,6 +4953,69 @@ const commentImageUrls = commentImages.map(
     });
   };
 
+  const renderDirectHistoryArchive = () => {
+  if (!isAdmin) return null;
+
+  const monthGroups = directHistoryTasks.reduce<
+    Record<string, DirectTaskHistory[]>
+  >((groups, task) => {
+    if (!task.archived_at) return groups;
+
+    const monthKey = new Date(
+      task.archived_at
+    ).toLocaleDateString("pl-PL", {
+      timeZone: "Europe/Warsaw",
+      month: "long",
+      year: "numeric",
+    });
+
+    if (!groups[monthKey]) {
+      groups[monthKey] = [];
+    }
+
+    groups[monthKey].push(task);
+
+    return groups;
+  }, {});
+
+  return (
+    <details className="mb-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+      <summary className="cursor-pointer font-bold text-stone-900">
+        📚 Archiwum historyczne – indywidualne
+        {" "}({directHistoryTasks.length})
+      </summary>
+
+      <div className="mt-4 space-y-2">
+        {directHistoryTasks.length === 0 && (
+          <p className="text-sm text-stone-500">
+            Brak zadań indywidualnych w archiwum historycznym.
+          </p>
+        )}
+
+        {Object.entries(monthGroups).map(
+          ([month, monthTasks]) => (
+            <details
+              key={month}
+              className="rounded-2xl border border-stone-200 bg-stone-50 p-3"
+            >
+              <summary className="cursor-pointer font-bold text-stone-900">
+                📅 {month} ({monthTasks.length})
+              </summary>
+
+              <div className="mt-3">
+                {renderDirectArchivedTasks(
+                  monthTasks,
+                  "sent"
+                )}
+              </div>
+            </details>
+          )
+        )}
+      </div>
+    </details>
+  );
+};
+
   const renderHistoryArchive = () => {
   if (!isAdmin) return null;
 
@@ -4770,10 +5322,7 @@ const commentImageUrls = commentImages.map(
               onChange={(e) => setFilterHotel(Number(e.target.value))}
             >
               <option value={0}>Wszystkie hotele</option>
-              {hotels.filter((h) =>
-  !(isManager && profile?.department_id === 2) ||
-  [1, 2, 3, 4].includes(h.id)
-).map((h) => (
+              {hotels.map((h) => (
                 <option key={h.id} value={h.id}>
                   {h.name}
                 </option>
@@ -4808,7 +5357,8 @@ const commentImageUrls = commentImages.map(
           {showForm && (
             <div className="mt-4 space-y-3">
               {/* 1. HOTEL */}
-              {(isManager || isAdmin) && (
+{(isManager || isAdmin) &&
+  selectedTargetType !== "selected_workers" && (
                 <select
                   className="w-full rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 outline-none"
                   value={selectedHotel}
@@ -4825,10 +5375,7 @@ const commentImageUrls = commentImages.map(
   setSelectedAreas([]);
 }}
                 >
-                  {hotels.filter((h) =>
-  !(isManager && profile?.department_id === 2) ||
-  [1, 2, 3, 4].includes(h.id)
-).map((h) => (
+                  {hotels.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.name}
                     </option>
@@ -4845,7 +5392,8 @@ const commentImageUrls = commentImages.map(
   e.target.value as
     | "department"
     | "housekeeping_manager"
-    | "reception_manager",
+    |  "reception_manager"
+    | "selected_workers",
 );
   setSelectedArea(null);
   setSelectedAreas([]);
@@ -4855,7 +5403,163 @@ const commentImageUrls = commentImages.map(
                 <option value="department">Dział</option>
                 <option value="housekeeping_manager">Manager pokojowych</option>
                 <option value="reception_manager">Manager recepcji</option>
+                {isManager && (
+                <option value="selected_workers">
+                  Wybrani pracownicy
+                </option>
+              )}
               </select>
+
+{isManager && selectedTargetType === "selected_workers" && (
+  <div className="space-y-2">
+
+    <button
+      type="button"
+      onClick={() => setShowWorkerPicker((prev) => !prev)}
+      className="flex w-full items-center justify-between rounded-2xl border border-stone-300 bg-stone-50 p-3 text-sm font-semibold text-stone-900"
+    >
+      <span>
+        {selectedWorkerIds.length > 0
+          ? `Wybrano pracowników: ${selectedWorkerIds.length}`
+          : "Wybierz pracowników"}
+      </span>
+
+      <span>{showWorkerPicker ? "▲" : "▼"}</span>
+    </button>
+
+    {showWorkerPicker && (
+      <div className="space-y-3 rounded-2xl border border-stone-200 bg-white p-3">
+
+        <input
+          type="text"
+          placeholder="🔍 Wpisz imię lub nazwisko..."
+          value={workerSearch}
+          onChange={(e) => setWorkerSearch(e.target.value)}
+          className="w-full rounded-xl border border-stone-300 bg-stone-50 p-3 text-sm text-stone-900 placeholder:text-stone-400 outline-none"
+        />
+
+        <label className="flex items-center gap-3 border-b border-stone-200 pb-3 text-sm font-bold text-stone-900">
+          <input
+            type="checkbox"
+            disabled={filteredWorkers.length === 0}
+            checked={
+              filteredWorkers.length > 0 &&
+              filteredWorkers.every((p) =>
+                selectedWorkerIds.includes(p.id)
+              )
+            }
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedWorkerIds((prev) =>
+                  Array.from(
+                    new Set([
+                      ...prev,
+                      ...filteredWorkers.map((p) => p.id),
+                    ])
+                  )
+                );
+              } else {
+                setSelectedWorkerIds((prev) =>
+                  prev.filter(
+                    (id) =>
+                      !filteredWorkers.some((p) => p.id === id)
+                  )
+                );
+              }
+            }}
+            className="h-5 w-5"
+          />
+
+          Zaznacz wszystkie wyniki ({filteredWorkers.length})
+        </label>
+
+        <div className="max-h-60 space-y-1 overflow-y-auto">
+
+          {filteredWorkers.map((p) => (
+            <label
+              key={p.id}
+              className="flex cursor-pointer items-center gap-3 rounded-xl p-2 hover:bg-stone-100"
+            >
+              <input
+                type="checkbox"
+                checked={selectedWorkerIds.includes(p.id)}
+                onChange={(e) => {
+                  setSelectedWorkerIds((prev) =>
+                    e.target.checked
+                      ? Array.from(new Set([...prev, p.id]))
+                      : prev.filter((id) => id !== p.id)
+                  );
+                }}
+                className="h-5 w-5 shrink-0"
+              />
+
+              <div>
+                <p className="text-sm font-semibold text-stone-900">
+  {p.name} {p.surname}
+</p>
+
+                <p className="text-xs text-stone-500">
+                  {getHotelName(p.hotel_id)} •{" "}
+                  {p.department_id === 4
+                    ? "PRALNIA"
+                    : departments.find(
+                        (d) => d.id === p.department_id
+                      )?.name}
+                </p>
+              </div>
+            </label>
+          ))}
+
+          {filteredWorkers.length === 0 && (
+            <p className="p-2 text-sm text-stone-500">
+              Nie znaleziono pracowników.
+            </p>
+          )}
+
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setShowWorkerPicker(false);
+            setWorkerSearch("");
+          }}
+          className="w-full rounded-xl bg-stone-900 py-3 text-sm font-bold text-white"
+        >
+          Zatwierdź ({selectedWorkerIds.length})
+        </button>
+
+      </div>
+    )}
+
+    {selectedWorkerIds.length > 0 && (
+      <div className="flex flex-wrap gap-1">
+        {availableWorkers
+          .filter((p) => selectedWorkerIds.includes(p.id))
+          .map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() =>
+                setSelectedWorkerIds((prev) =>
+                  prev.filter((id) => id !== p.id)
+                )
+              }
+              className="rounded-lg bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800"
+            >
+              {p.name} {p.surname} ✕
+            </button>
+          ))}
+      </div>
+    )}
+
+    <p className="text-xs text-stone-500">
+      Każdy wybrany pracownik musi indywidualnie
+      potwierdzić zapoznanie się z zadaniem.
+    </p>
+
+  </div>
+)}
 
               {selectedTargetType === "department" && (
                 <>
@@ -5025,6 +5729,8 @@ const commentImageUrls = commentImages.map(
               />
 
               {/* 5. ZDJĘCIA I FILMY */}
+              {selectedTargetType !== "selected_workers" && (
+  <>
               <label className="block text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
                 📎 Zdjęcia i filmy
               </label>
@@ -5100,6 +5806,25 @@ const commentImageUrls = commentImages.map(
 )}
 
               {/* 6. WYŚLIJ */}
+                </>
+)}
+
+{selectedTargetType === "selected_workers" && (
+  <div className="rounded-xl bg-stone-100 p-3 text-xs text-stone-500">
+    Zadania wymagające potwierdzenia obsługują obecnie
+    wyłącznie treść tekstową.
+
+    {selectedAttachments.length > 0 && (
+      <button
+        type="button"
+        onClick={() => setSelectedAttachments([])}
+        className="mt-2 block font-bold text-red-600"
+      >
+        Usuń wcześniej wybrane załączniki
+      </button>
+    )}
+  </div>
+)}
               <button
               onClick={addTask}
               disabled={isSending}
@@ -5116,15 +5841,54 @@ const commentImageUrls = commentImages.map(
           className="mb-2 flex w-full items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 text-left font-bold text-stone-900 shadow-sm"
         >
           <span>📥 Otrzymane</span>
-          <Badge count={received.length} />
+          <Badge count={received.length + directReceived.length} />
         </button>
 
-        {openSections.otrzymane && (
+    {openSections.otrzymane && (
   <>
-    {renderTasks(
-      received.slice(0, visibleTaskLimits.received),
-      "received",
-    )}
+    {directReceived.map((t) => (
+      <div
+        key={`direct-received-${t.id}`}
+        className="mb-3 rounded-2xl border border-blue-300 bg-white p-4 shadow-sm"
+      >
+        <div className="mb-3">
+          <span className="rounded-lg bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800">
+            WYMAGA POTWIERDZENIA
+          </span>
+        </div>
+
+        <p className="whitespace-pre-wrap break-words text-sm font-semibold text-stone-900">
+          {t.title}
+        </p>
+
+        <p className="mt-2 text-xs text-stone-500">
+          Od: {getProfileName(t.author_id)}
+        </p>
+
+        <p className="mt-1 text-xs text-stone-400">
+          {new Date(t.created_at).toLocaleString("pl-PL", {
+            timeZone: "Europe/Warsaw",
+          })}
+        </p>
+
+        <button
+          type="button"
+          disabled={confirmingDirectTaskId !== null}
+          onClick={() => confirmDirectTask(t.id)}
+          className="mt-4 w-full rounded-xl bg-blue-600 py-3 text-sm font-bold text-white disabled:opacity-50"
+        >
+          {confirmingDirectTaskId === t.id
+            ? "Potwierdzanie..."
+            : "Zapoznałem się"}
+        </button>
+      </div>
+    ))}
+
+    {(received.length > 0 || directReceived.length === 0) &&
+      renderTasks(
+        received.slice(0, visibleTaskLimits.received),
+        "received",
+      )}
 
     {received.length > visibleTaskLimits.received && (
       <button
@@ -5149,11 +5913,149 @@ const commentImageUrls = commentImages.map(
         >
           <span>📤 Wysłane</span>
           <Badge
-          count={sentRegularTasks.length + sentTaskBatches.length}/>
+          count={
+  sentRegularTasks.length +
+  sentTaskBatches.length +
+  directSent.length
+}/>
         </button>
 
         {openSections.wysłane && (
   <>
+    {directSent.map((t) => {
+      const confirmedCount = t.recipients.filter(
+        (r) => !!r.confirmed_at
+      ).length;
+
+      const totalCount = t.recipients.length;
+
+      const allConfirmed =
+        totalCount > 0 && confirmedCount === totalCount;
+
+      const progress =
+        totalCount > 0
+          ? (confirmedCount / totalCount) * 100
+          : 0;
+
+      return (
+        <div
+          key={`direct-sent-${t.id}`}
+          className="mb-3 rounded-2xl border border-blue-300 bg-white p-4 shadow-sm"
+        >
+          <span className="rounded-lg bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800">
+            WYMAGA POTWIERDZENIA
+          </span>
+
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm font-semibold text-stone-900">
+            {t.title}
+          </p>
+
+          <p className="mt-2 text-xs text-stone-400">
+            {new Date(t.created_at).toLocaleString("pl-PL", {
+              timeZone: "Europe/Warsaw",
+            })}
+          </p>
+
+          <div className="mt-4 rounded-xl bg-stone-50 p-3">
+
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-bold text-stone-700">
+                Potwierdzenia
+              </span>
+
+              <span
+                className={`text-sm font-bold ${
+                  allConfirmed
+                    ? "text-green-600"
+                    : "text-blue-600"
+                }`}
+              >
+                {confirmedCount}/{totalCount}
+              </span>
+            </div>
+
+            <div className="h-2 overflow-hidden rounded-full bg-stone-200">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  allConfirmed
+                    ? "bg-green-600"
+                    : "bg-blue-600"
+                }`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {t.recipients.map((r) => (
+                <div
+                  key={r.user_id}
+                  className="flex items-center justify-between gap-2 border-b border-stone-200 pb-2 last:border-0"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-stone-800">
+                      {r.name} {r.surname}
+                    </p>
+
+                    <p className="text-xs text-stone-500">
+                      {getHotelName(r.hotel_id)}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    {r.confirmed_at ? (
+                      <>
+                        <p className="text-xs font-bold text-green-600">
+                          ✓ Potwierdzono
+                        </p>
+
+                        <p className="text-xs text-stone-400">
+                          {new Date(
+                            r.confirmed_at
+                          ).toLocaleString("pl-PL", {
+                            timeZone: "Europe/Warsaw",
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs font-bold text-amber-600">
+                        Oczekuje
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={
+              !allConfirmed ||
+              archivingDirectTaskId !== null
+            }
+            onClick={() => archiveDirectTask(t.id)}
+            className="mt-4 w-full rounded-xl bg-stone-900 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {archivingDirectTaskId === t.id
+              ? "Archiwizowanie..."
+              : allConfirmed
+                ? "Archiwizuj"
+                : `Archiwizuj (${confirmedCount}/${totalCount})`}
+          </button>
+
+          {!allConfirmed && (
+            <p className="mt-2 text-center text-xs text-stone-500">
+              Brakuje potwierdzeń: {totalCount - confirmedCount}
+            </p>
+          )}
+        </div>
+      );
+    })}
+
     {sentTaskBatchesForDisplay.map((batch) => {
   const stats = getTaskBatchStats(batch.id);
 
@@ -5322,7 +6224,9 @@ const commentImageUrls = commentImages.map(
     })}
 
     <>
-  {renderTasks(
+  {(sentRegularTasksForDisplay.length > 0 ||
+  directSent.length === 0) &&
+  renderTasks(
     sentRegularTasksForDisplay.slice(0, visibleTaskLimits.sent),
     "sent",
   )}
@@ -5381,13 +6285,20 @@ const commentImageUrls = commentImages.map(
     </div>
 
             <>
-  {renderTasks(
-  filteredArchivedReceived.slice(
-    0,
-    visibleTaskLimits.archived,
-  ),
-  "archived",
+  {renderDirectArchivedTasks(
+  filteredDirectArchivedReceived,
+  "received"
 )}
+
+{(filteredArchivedReceived.length > 0 ||
+  filteredDirectArchivedReceived.length === 0) &&
+  renderTasks(
+    filteredArchivedReceived.slice(
+      0,
+      visibleTaskLimits.archived,
+    ),
+    "archived",
+  )}
 
   {filteredArchivedReceived.length >
   visibleTaskLimits.archived && (
@@ -5527,13 +6438,20 @@ const commentImageUrls = commentImages.map(
   })}
 
   <>
-  {renderTasks(
-  filteredArchivedSentRegularTasks.slice(
-    0,
-    visibleTaskLimits.archivedSent,
-  ),
-  "archived",
+  {renderDirectArchivedTasks(
+  filteredDirectArchivedSent,
+  "sent"
 )}
+
+{(filteredArchivedSentRegularTasks.length > 0 ||
+  filteredDirectArchivedSent.length === 0) &&
+  renderTasks(
+    filteredArchivedSentRegularTasks.slice(
+      0,
+      visibleTaskLimits.archivedSent,
+    ),
+    "archived",
+  )}
 
   {filteredArchivedSentRegularTasks.length >
   visibleTaskLimits.archivedSent && (
@@ -5555,6 +6473,7 @@ const commentImageUrls = commentImages.map(
           </>
         )}
         {isAdmin && renderHistoryArchive()}
+        {isAdmin && renderDirectHistoryArchive()}
       </div>
     </div>
   );
