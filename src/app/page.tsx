@@ -1802,6 +1802,9 @@ const directArchivedSent = directTasks.filter(
 
   const isHotelManager = profile?.role === "kierownik_hotelu";
   const isManager = profile?.role === "kierownik";
+  const hasRestrictedManagerAccess =
+  profile?.role === "pracownik" &&
+  [1, 4].includes(profile.department_id);
   const isAdmin = profile?.role === "administrator"|| profile?.role === "admin";
 
   const allowedWorkerDepartments =
@@ -2056,6 +2059,14 @@ const addDirectTask = async () => {
 
     const isReceptionManagerTarget =
       selectedTargetType === "reception_manager";  
+
+      if (
+  hasRestrictedManagerAccess &&
+  isReceptionManagerTarget
+) {
+  alert("Nie masz uprawnień do wysyłania zadań do tego managera.");
+  return;
+}
 
     const isHotelManagerTarget =
       selectedTargetType === "department" &&
@@ -5402,7 +5413,11 @@ const commentImageUrls = commentImages.map(
               >
                 <option value="department">Dział</option>
                 <option value="housekeeping_manager">Manager pokojowych</option>
-                <option value="reception_manager">Manager recepcji</option>
+                {!hasRestrictedManagerAccess && (
+  <option value="reception_manager">
+    Manager recepcji
+  </option>
+)}
                 {isManager && (
                 <option value="selected_workers">
                   Wybrani pracownicy
