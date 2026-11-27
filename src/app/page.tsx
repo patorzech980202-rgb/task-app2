@@ -2242,16 +2242,9 @@ if (
   return;
 }
 
-    if (isHotelManagerTarget && targets.length > 1) {
+if (isHotelManagerTarget && targets.length > 1) {
   alert(
     "Znaleziono więcej niż jedną kierowniczkę pokojowych dla tego hotelu. Sprawdź role kont w Supabase.",
-  );
-  return;
-}
-
-if (isReceptionManagerTarget && targets.length > 1) {
-  alert(
-    "Znaleziono więcej niż jedno konto Managera recepcji. Sprawdź role kont w Supabase.",
   );
   return;
 }
